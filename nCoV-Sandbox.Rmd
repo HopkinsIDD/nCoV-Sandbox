@@ -1,6 +1,8 @@
 ---
 title: "R Notebook"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 
@@ -22,3 +24,16 @@ output: html_notebook
 
 ## Some Tasks
 - Download first snapshot, do some basic data cleaning and epi summaries.
+- Do some data cleaning and loading
+- Make some basic summaries
+- Get province level covariates
+    - population
+    - population density
+      - average/high/low
+    - Average Feb temperature
+    - Average/high-low Absolute humidity
+    - Basic demographics (if available)
+    - [OTHER WEATHER]
+    - [OTHER INDEXES OF URBANIZATOIN/ECONOMY]
+
+- Get the most basic model work
