@@ -1,0 +1,24 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+# Planning Notes/Ideas
+
+- Apply basic framework to data so far, focusing on final size first
+- Also do some basic epi summaries
+    - here is a place for cool visulizations.
+- Focus on province/state level in China (including Hong Kong/Macau SAR)
+- Run this as a very open excercise in open science.
+- Take snapshots of data...starting with stuff from : https://docs.google.com/spreadsheets/d/1jS24DjSPVWa4iuxuD4OAXrE3QeI8c9BC1hSlqr-NMiU/edit#gid=1449891965.
+- Get total case snapshot from https://docs.google.com/spreadsheets/d/169AP3oaJZSMTquxtrkgFYMSp4gTApLTTWqo25qCpjL0/edit#gid=975486030
+- Basically take snapshots and then post.
+- Longer term...use approach and inference stuff for effect of actions.
+- Keep a database of dates of intervention actions, major events.
+    - 1/22/2020 : Wuhan Quarintine
+
+
+## Some Tasks
+- Download first snapshot, do some basic data cleaning and epi summaries.
