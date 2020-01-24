@@ -5,7 +5,11 @@ output:
     df_print: paged
 ---
 
-
+```{r}
+#Preamble
+require(knitr)
+require(tidyverse)
+```
 
 # Planning Notes/Ideas
 
@@ -37,3 +41,61 @@ output:
     - [OTHER INDEXES OF URBANIZATOIN/ECONOMY]
 
 - Get the most basic model work
+
+## Basic Epi Summary 1-23-2020
+
+
+Age distribution of cases. 
+```{r}
+  source("R/DataLoadUtils.r")
+
+  kudos <- readKudos("data/Kudos Line List-1-23-2020.csv") %>%
+   mutate(age_cat = cut(Age, seq(0,100,10)))
+  
+  #Age distribution of cases.
+  require(ggplot2)
+  ggplot(kudos, aes(x=Age, fill=dead)) + 
+    geom_histogram(breaks=seq(0,100,10), color="grey")
+  
+
+```
+
+Lookat teh odds of death by gender and age. 
+
+```{r}
+
+
+  
+  gender_odds <- kudos%>%group_by(Gender, dead)%>%
+    summarize(n())%>%
+    mutate(dead=ifelse(dead,"dead","alive"))%>%
+    pivot_wider(names_from = dead,values_from=`n()`)%>%
+    mutate(OR=dead/alive)
+  
+  gender_odds <- gender_odds%>%mutate(OR=OR/gender_odds$OR[1])
+  
+  kable(gender_odds, digits=2)
+  
+  age_odds <- kudos %>%
+    group_by(age_cat,dead)%>%
+    summarize(n())%>%
+    mutate(dead=ifelse(dead,"dead","alive"))%>%
+    pivot_wider(names_from = dead,values_from=`n()`)%>%
+    mutate(OR=dead/alive)
+
+  age_odds <- age_odds%>%mutate(OR=OR/age_odds$OR[5])
+  
+  
+  kable(age_odds)
+```
+
+Epidemic curve of line list cases by location.
+
+```{r}
+  ggplot(kudos, aes(x=onset)) + geom_bar()
+
+```
+Now look at each locations curve in the line list data.
+```{r}
+ ggplot(kudos, aes(x=onset)) + geom_bar() + facet_wrap(.~Location)
+```
