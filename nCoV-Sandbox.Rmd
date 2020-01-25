@@ -1,15 +1,114 @@
 ---
-title: "R Notebook"
+title: "nCoV 2019 Sandbox"
 output:
   html_document:
     df_print: paged
 ---
 
-```{r}
+```{r setup, include=FALSE}
 #Preamble
 require(knitr)
 require(tidyverse)
 ```
+
+# What is this?
+
+The nCoV Sandbox is a running analytic blog we are "writing" as we try to apply some methods we had in the very early stages of development, and some old friends, to the 2019 nCoV outbreak. It also is us trying to run some analyses to get our on handle on, and keep up to date on, the epidmeiology of the emerging epidemic.
+
+This is a bit of an excercise in radical transparency, and things are going start out very messy...but will hopefully get cleaner and more meaningful as things go. But the old stuff will (for the moment) remain at the botto for posterity.
+
+# Analytic Blog
+
+## Basic Epi Summary 1-24-2020
+
+Simple snapshot as of 2020-24-1 based on snapshot of linelist data
+derived from public sources from:
+https://docs.google.com/spreadsheets/d/1jS24DjSPVWa4iuxuD4OAXrE3QeI8c9BC1hSlqr-NMiU/edit#gid=1449891965
+
+(AKA the Kudos list).
+
+This is some very basic episnapshots that should be improved 
+in the coming days. 
+
+
+First just take a rough look at the age distribution of cases.
+Ten year increments.
+```{r}
+  source("R/DataLoadUtils.r")
+
+  kudos <- readKudos2("data/Kudos Line List-1-24-2020.csv") %>%
+   mutate(age_cat = cut(age, seq(0,100,10)))
+  
+  #Age distribution of cases.
+  require(ggplot2)
+  ggplot(drop_na(kudos, age_cat), 
+         aes(x=age_cat, fill=as.factor(death))) + 
+    geom_bar( color="grey") + coord_flip() + xlab("Age Catergory")
+  
+
+```
+
+Next, are we seeing any obvious differences in mortality
+by gender or age?
+
+```{r, echo=FALSE, warning=FALSE}
+
+  gender_odds <- kudos%>%group_by(gender, death)%>%
+    summarize(n())%>%
+    mutate(death=ifelse(death,"dead","alive"))%>%
+    pivot_wider(names_from = death,values_from=`n()`)
+
+    #%>%
+    #mutate(OR=dead/alive)
+  
+  #gender_odds <- gender_odds%>%mutate(OR=OR/gender_odds$OR[1])
+  gender_odds_mdl <- glm(death~gender, data=kudos,
+                         family=binomial)
+  gender_odds$OR <- c(1, exp(gender_odds_mdl$coef[2]))
+  gender_odds$CI <- c("-",
+                      paste(round(exp(confint(gender_odds_mdl)[,2]),2),
+                            collapse = ","))
+  
+  kable(gender_odds, digits=2)
+  
+  
+  age_odds <- kudos %>%
+    drop_na(age_cat)%>%
+    group_by(age_cat,death)%>%
+    summarize(n())%>%
+    mutate(death=ifelse(death,"dead","alive"))%>%
+    pivot_wider(names_from = death,values_from=`n()`) %>%
+    replace_na(list(dead=0))
+  
+  kudos$age_cat <- relevel(kudos$age_cat, ref="(50,60]")
+  age_odds_mdl <- glm(death~age_cat, data=kudos,
+                         family=binomial)
+  age_odds$OR <- c(exp(age_odds_mdl$coef[2:5]),1,
+                   exp(age_odds_mdl$coef[6:8]))
+  tmp <- round(exp(confint(age_odds_mdl)),2)
+  tmp <- apply(tmp, 1, paste, collapse=",")
+  age_odds$CI <- c(tmp[2:5],"-",tmp[6:8])
+  
+
+  kable(age_odds, digits = 2)
+```
+
+Even as sparse as this data is, this is showing some clear
+evidence of and age relationship. 
+
+
+Epidemic curve of line list cases. Not
+super informative at this point. 
+
+```{r}
+  ggplot(kudos, aes(x=symptom_onset, fill=as.factor(death))) +
+  geom_bar()
+
+```
+A touch interesting that all deaths are early on. This suggests either (A) surveillance was really biased towards deaths in the early days, or (B) a lot of the later reports have not had time to die. 
+
+[Note that there was perviously a 1-23-2020 summary 
+but that was too preliminary even for this]
 
 # Planning Notes/Ideas
 
@@ -26,7 +125,7 @@ require(tidyverse)
     - 1/22/2020 : Wuhan Quarintine
 
 
-## Some Tasks
+### Some Tasks
 - Download first snapshot, do some basic data cleaning and epi summaries.
 - Do some data cleaning and loading
 - Make some basic summaries
@@ -41,61 +140,3 @@ require(tidyverse)
     - [OTHER INDEXES OF URBANIZATOIN/ECONOMY]
 
 - Get the most basic model work
-
-## Basic Epi Summary 1-23-2020
-
-
-Age distribution of cases. 
-```{r}
-  source("R/DataLoadUtils.r")
-
-  kudos <- readKudos("data/Kudos Line List-1-23-2020.csv") %>%
-   mutate(age_cat = cut(Age, seq(0,100,10)))
-  
-  #Age distribution of cases.
-  require(ggplot2)
-  ggplot(kudos, aes(x=Age, fill=dead)) + 
-    geom_histogram(breaks=seq(0,100,10), color="grey")
-  
-
-```
-
-Lookat teh odds of death by gender and age. 
-
-```{r}
-
-
-  
-  gender_odds <- kudos%>%group_by(Gender, dead)%>%
-    summarize(n())%>%
-    mutate(dead=ifelse(dead,"dead","alive"))%>%
-    pivot_wider(names_from = dead,values_from=`n()`)%>%
-    mutate(OR=dead/alive)
-  
-  gender_odds <- gender_odds%>%mutate(OR=OR/gender_odds$OR[1])
-  
-  kable(gender_odds, digits=2)
-  
-  age_odds <- kudos %>%
-    group_by(age_cat,dead)%>%
-    summarize(n())%>%
-    mutate(dead=ifelse(dead,"dead","alive"))%>%
-    pivot_wider(names_from = dead,values_from=`n()`)%>%
-    mutate(OR=dead/alive)
-
-  age_odds <- age_odds%>%mutate(OR=OR/age_odds$OR[5])
-  
-  
-  kable(age_odds)
-```
-
-Epidemic curve of line list cases by location.
-
-```{r}
-  ggplot(kudos, aes(x=onset)) + geom_bar()
-
-```
-Now look at each locations curve in the line list data.
-```{r}
- ggplot(kudos, aes(x=onset)) + geom_bar() + facet_wrap(.~Location)
-```

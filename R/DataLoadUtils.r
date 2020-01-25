@@ -5,6 +5,18 @@
 ##' 
 ##' @return a data frame with the basic data.
 ##' 
+readKudos2 <- function (filename) {
+  require(tidyverse)
+  rc <- read_csv(filename, col_types = 
+                   cols(date=col_date("%m/%d/%Y"),
+                        gender=col_factor(),
+                        symptom_onset = col_date("%m/%d/%Y")))
+  
+ 
+  return(rc)
+}
+
+##' Same as above but for older Kudos file layout.
 readKudos <- function (filename) {
   require(tidyverse)
   rc <- read_csv(filename, col_types = 
