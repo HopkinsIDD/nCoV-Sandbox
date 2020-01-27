@@ -9,6 +9,7 @@ output:
 #Preamble
 require(knitr)
 require(tidyverse)
+require(gridExtra)
 ```
 
 # What is this?
@@ -18,6 +19,122 @@ The nCoV Sandbox is a running analytic blog we are "writing" as we try to apply 
 This is a bit of an excercise in radical transparency, and things are going start out very messy...but will hopefully get cleaner and more meaningful as things go. But the old stuff will (for the moment) remain at the botto for posterity.
 
 # Analytic Blog
+
+## Basic Epi Summary 1-25-2020
+
+Three goals for today:
+
+1. Make functions to automate most ofbasic epi report
+2. Add a few new basic analyses.
+
+### Summarizing the line list data
+Age distribution and epicurve for cases where we have 
+individual line list information. 
+
+```{r, echo=FALSE, message=FALSE}
+  source("R/DataLoadUtils.r")
+  source("R/BasicEpiAnalyses.r")
+
+
+  kudos <- readKudos2("data/Kudos Line List-1-25-2020.csv") %>%
+   mutate(age_cat = cut(age, seq(0,100,10)))
+  
+  grid.arrange(age_dist_graph(kudos),
+               epi_curve_reported_cases(kudos),
+               nrow=2)
+  
+```
+
+Now lets look at some basic infomration on survival by age group
+and gender.
+
+```{r, warning=FALSE, echo=FALSE}
+
+  kable(OR_table_age(kudos))
+
+  kable(OR_table_gender(kudos))
+  
+```
+
+**Take aways from the line list data:**
+
+- There is a huge survival effect by age.
+- No apparent effect of gender.
+- If the line list data is reflective of when deaths got
+sick in the cumlative data, the overall  CFR may increase quite a bit in coming weeks.
+
+
+### Bringing in the cumulative case data.
+
+Now lets start to look at the aggregate cumulative case
+data as that is going to be the most widely available, complete
+and the basis for most of our predictive style analyses.
+
+First we will focuse on Mainland China, Hong Kong and 
+Macau.
+
+```{r, message=FALSE}
+  jhucsse <- read_JHUCSSE_cases("2020-01-25 23:59", append_wiki = TRUE)
+    
+  ##Filter to China:
+  jhucsse_china <- jhucsse %>% 
+    filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong"))
+
+ 
+  
+  jhucsse_china %>% drop_na(Confirmed) %>% 
+    filter(Update>"2020-01-14") %>% 
+  ggplot(aes(x=Update, y=Confirmed, col=Province_State)) +
+    geom_line() + scale_y_log10()
+  
+  
+  
+```
+
+Looking at all provinces, so let's narrow it to places that at some 
+point experience at least 25 confimed cases and 
+look vs. a straight log-linear line. 
+
+Note that is is not quite right for real exponential growth since we 
+are looking at the cumulative report rather than the 
+
+```{r}
+    tmp <- jhucsse_china%>%filter(Confirmed>=25)
+    tmp <- unique(tmp$Province_State)
+    
+  
+    ## Look at consitencey in exponential groqth by areas.
+    analyze <-   jhucsse_china %>% drop_na(Confirmed) %>% 
+      filter(Update>"2020-01-14") %>%
+      filter(Province_State%in%tmp)
+    
+    #Get the slopes for each province. 
+    slopes <- analyze %>% nest(-Province_State) %>%
+      mutate(slope=map_dbl(data, ~lm(log10(.$Confirmed)~as.Date(.$Update))$coef[2])) %>%
+      select(-data) %>% mutate(exp_scale=10^(slope))
+    
+    kable(slopes, digits=2)
+    
+    #ggplot(slopes, aes(x=Province_State, y=slope)) +
+    #         geom_bar(stat="identity") + coord_flip()
+    
+    ##Plot the exponential growth rate in eaach against a linear rate. 
+    jhucsse_china %>% drop_na(Confirmed) %>% 
+      filter(Update>"2020-01-14") %>%
+      filter(Province_State%in%tmp)%>%
+      ggplot(aes(x=Update, y=Confirmed, col=Province_State)) +
+        geom_point() + scale_y_log10() + stat_smooth(method="lm", se=FALSE)
+    
+```
+
+Leaving it there for the moment due to lack of aggregate data. 
+
+**Cumulative analysis preliminary so too early to say much but:**
+
+- Growing everywhere with at least a few cases
+- Rates seem very roughly similar
+
+
 
 ## Basic Epi Summary 1-24-2020
 
@@ -91,6 +208,8 @@ by gender or age?
   
 
   kable(age_odds, digits = 2)
+  
+ 
 ```
 
 Even as sparse as this data is, this is showing some clear

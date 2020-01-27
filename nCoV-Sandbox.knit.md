@@ -31,7 +31,7 @@ individual line list information.
 ## Warning: Removed 18 rows containing non-finite values (stat_count).
 ```
 
-![plot of chunk unnamed-chunk-7](figure/unnamed-chunk-7-1.png)
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-1-1.png" width="672" />
 
 Now lets look at some basic infomration on survival by age group
 and gender.
@@ -43,17 +43,17 @@ and gender.
 
 
 
-|age_cat | alive| dead|         OR|CI                       |
-|:-------|-----:|----:|----------:|:------------------------|
-|(0,10]  |     2|    0|  0.0000000|NA,2.4442929329126e+305  |
-|(10,20] |     4|    0|  0.0000000|NA,1.54362475336342e+123 |
-|(20,30] |    16|    0|  0.0000000|NA,5.68642814649887e+36  |
-|(30,40] |    25|    1|  0.1900000|0.01,1.41                |
-|(40,50] |    26|    1|  0.1826923|0.01,1.36                |
-|(50,60] |    19|    4|  1.0000000|-                        |
-|(60,70] |    10|   16|  7.6000000|2.15,32.49               |
-|(70,80] |     1|    7| 33.2500000|4.34,723.13              |
-|(80,90] |     1|   10| 47.5000000|6.56,1014.13             |
+age_cat    alive   dead           OR  CI                       
+--------  ------  -----  -----------  -------------------------
+(0,10]         2      0    0.0000000  NA,2.4442929329126e+305  
+(10,20]        4      0    0.0000000  NA,1.54362475336342e+123 
+(20,30]       16      0    0.0000000  NA,5.68642814649887e+36  
+(30,40]       25      1    0.1900000  0.01,1.41                
+(40,50]       26      1    0.1826923  0.01,1.36                
+(50,60]       19      4    1.0000000  -                        
+(60,70]       10     16    7.6000000  2.15,32.49               
+(70,80]        1      7   33.2500000  4.34,723.13              
+(80,90]        1     10   47.5000000  6.56,1014.13             
 
 ```
 ## Waiting for profiling to be done...
@@ -61,10 +61,10 @@ and gender.
 
 
 
-|gender | alive| dead|        OR|CI        |
-|:------|-----:|----:|---------:|:---------|
-|male   |    72|   27| 1.0000000|-         |
-|female |    35|   12| 0.9142857|0.58,1.99 |
+gender    alive   dead          OR  CI        
+-------  ------  -----  ----------  ----------
+male         72     27   1.0000000  -         
+female       35     12   0.9142857  0.58,1.99 
 
 **Take aways from the line list data:**
 
@@ -99,7 +99,7 @@ Macau.
     geom_line() + scale_y_log10()
 ```
 
-![plot of chunk unnamed-chunk-9](figure/unnamed-chunk-9-1.png)
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-3-1.png" width="672" />
 
 Looking at all provinces, so let's narrow it to places that at some 
 point experience at least 25 confimed cases and 
@@ -137,22 +137,22 @@ are looking at the cumulative report rather than the
 
 
 
-|Province_State | slope| exp_scale|
-|:--------------|-----:|---------:|
-|Hubei          |  0.14|      1.38|
-|Zhejiang       |  0.33|      2.12|
-|Guangdong      |  0.19|      1.57|
-|Henan          |  0.39|      2.46|
-|Chongqing      |  0.38|      2.38|
-|Hunan          |  0.41|      2.59|
-|Anhui          |  0.56|      3.59|
-|Beijing        |  0.19|      1.55|
-|Sichuan        |  0.31|      2.04|
-|Shanghai       |  0.20|      1.60|
-|Shandong       |  0.43|      2.67|
-|Jiangxi        |  0.42|      2.62|
-|Guangxi        |  0.43|      2.70|
-|Jiangsu        |  0.47|      2.97|
+Province_State    slope   exp_scale
+---------------  ------  ----------
+Hubei              0.14        1.38
+Zhejiang           0.33        2.12
+Guangdong          0.19        1.57
+Henan              0.39        2.46
+Chongqing          0.38        2.38
+Hunan              0.41        2.59
+Anhui              0.56        3.59
+Beijing            0.19        1.55
+Sichuan            0.31        2.04
+Shanghai           0.20        1.60
+Shandong           0.43        2.67
+Jiangxi            0.42        2.62
+Guangxi            0.43        2.70
+Jiangsu            0.47        2.97
 
 ```r
     #ggplot(slopes, aes(x=Province_State, y=slope)) +
@@ -166,7 +166,7 @@ are looking at the cumulative report rather than the
         geom_point() + scale_y_log10() + stat_smooth(method="lm", se=FALSE)
 ```
 
-![plot of chunk unnamed-chunk-10](figure/unnamed-chunk-10-1.png)
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-4-1.png" width="672" />
 
 Leaving it there for the moment due to lack of aggregate data. 
 
@@ -205,7 +205,7 @@ Ten year increments.
     geom_bar( color="grey") + coord_flip() + xlab("Age Catergory")
 ```
 
-![plot of chunk unnamed-chunk-11](figure/unnamed-chunk-11-1.png)
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-5-1.png" width="672" />
 
 Next, are we seeing any obvious differences in mortality
 by gender or age?
@@ -217,10 +217,10 @@ by gender or age?
 
 
 
-|gender | alive| dead|   OR|CI        |
-|:------|-----:|----:|----:|:---------|
-|male   |    54|   15| 1.00|-         |
-|female |    23|    8| 1.25|0.48,3.31 |
+gender    alive   dead     OR  CI        
+-------  ------  -----  -----  ----------
+male         54     15   1.00  -         
+female       23      8   1.25  0.48,3.31 
 
 ```
 ## Waiting for profiling to be done...
@@ -228,16 +228,16 @@ by gender or age?
 
 
 
-|age_cat | alive| dead|     OR|CI                      |
-|:-------|-----:|----:|------:|:-----------------------|
-|(10,20] |     2|    0|   0.00|0,2.393735337629e+91    |
-|(20,30] |     8|    0|   0.00|NA,8.12332729629327e+59 |
-|(30,40] |    20|    1|   0.70|0.03,18.71              |
-|(40,50] |    21|    1|   0.67|0.02,17.8               |
-|(50,60] |    14|    1|   1.00|-                       |
-|(60,70] |     8|    9|  15.75|2.34,319.1              |
-|(70,80] |     1|    3|  42.00|2.83,1775.73            |
-|(80,90] |     1|    8| 112.00|9.58,4388.42            |
+age_cat    alive   dead       OR  CI                      
+--------  ------  -----  -------  ------------------------
+(10,20]        2      0     0.00  0,2.393735337629e+91    
+(20,30]        8      0     0.00  NA,8.12332729629327e+59 
+(30,40]       20      1     0.70  0.03,18.71              
+(40,50]       21      1     0.67  0.02,17.8               
+(50,60]       14      1     1.00  -                       
+(60,70]        8      9    15.75  2.34,319.1              
+(70,80]        1      3    42.00  2.83,1775.73            
+(80,90]        1      8   112.00  9.58,4388.42            
 
 Even as sparse as this data is, this is showing some clear
 evidence of and age relationship. 
@@ -256,7 +256,7 @@ super informative at this point.
 ## Warning: Removed 11 rows containing non-finite values (stat_count).
 ```
 
-![plot of chunk unnamed-chunk-13](figure/unnamed-chunk-13-1.png)
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-7-1.png" width="672" />
 A touch interesting that all deaths are early on. This suggests either (A) surveillance was really biased towards deaths in the early days, or (B) a lot of the later reports have not had time to die. 
 
 [Note that there was perviously a 1-23-2020 summary 

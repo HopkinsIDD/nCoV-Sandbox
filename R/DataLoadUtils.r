@@ -35,11 +35,12 @@ readKudos <- function (filename) {
 ##' Reads in the JHUCSSE total case count data up
 ##' until (and including) a given dat.
 ##' 
-##' @param date the last day to consider data from
+##' @param last_time the last time to consider data from 
+##' @param append_wiki sjpi;d we also append data from wikipedia.
 ##'
 ##' @return a data frame with the basic data.
 ##' 
-read_JHUCSSE_cases <- function(date) {
+read_JHUCSSE_cases <- function(last_time, append_wiki) {
 
   ## first get a list of all of the files in the directory
   ## starting with "JHUCSSE Total Cases"
@@ -47,7 +48,6 @@ read_JHUCSSE_cases <- function(date) {
                           full.names = TRUE)
   
   file_list <- rev(file_list)
-  print(file_list)
   
   ##Now combine them into one data frame
   rc <- NULL
@@ -68,7 +68,17 @@ read_JHUCSSE_cases <- function(date) {
   }
   
   ##Now drop any after the date given
-  rc <- rc%>%filter(Update<=date)
+  rc <- rc%>%filter(Update<=last_time) %>%
+    mutate(Country_Region=replace(Country_Region, Country_Region=="China", "Mainland China")) %>% 
+    mutate(Country_Region=replace(Country_Region, Province_State=="Macau", "Macau")) %>% 
+    mutate(Country_Region=replace(Country_Region, Province_State=="Hong Kong", "Hong Kong")) %>% 
+    mutate(Country_Region=replace(Country_Region, Province_State=="Taiwan", "Taiwan"))
+    
+  if (append_wiki) {
+    wiki <- read_csv("data/WikipediaWuhanPre1-20-2020.csv", 
+                     col_types=cols(Update = col_datetime("%m/%d/%Y")))
+    rc <-bind_rows(rc,wiki)
+  }
   
   return(rc)
 }
