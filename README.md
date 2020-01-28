@@ -15,6 +15,107 @@ This is a bit of an excercise in radical transparency, and things are going star
 
 # Analytic Blog
 
+## Basic Epi Summary 1-27-2020
+
+First goal for the day, dig in deeper on the age specific data
+and compare with the MERS-CoV data in a bit more detail.
+
+First as always, load and sumarize the most recent Kudos line 
+list (https://docs.google.com/spreadsheets/d/1jS24DjSPVWa4iuxuD4OAXrE3QeI8c9BC1hSlqr-NMiU/edit#gid=1187587451)
+
+
+```
+## Warning: The following named parsers don't match the column names: date
+```
+
+```
+## Warning: Removed 31 rows containing non-finite values (stat_count).
+```
+
+![plot of chunk unnamed-chunk-3](figure/unnamed-chunk-3-1.png)
+Note that we don't have any linelist information on the deaths
+that occured before arou 1/15 in this line lisat. Moving forward with this data comparing with MERS-CoV data from Saudi Arabia 
+through summer 2014.
+
+![plot of chunk unnamed-chunk-4](figure/unnamed-chunk-4-1.png)
+
+**Figure:** Odds ratio of death by age group for MERS=CoV and nCoV-2019. Log-scale.
+
+
+**Table:** Odds ratio of death by age group for MERS=CoV and nCoV-2019
+
+|age_cat |nCoV                |MERS              |
+|:-------|:-------------------|:-----------------|
+|0-9     |-                   |0.41 (0.11, 1.26) |
+|10-19   |-                   |0.19 (0.05, 0.52) |
+|20-29   |-                   |0.22 (0.12, 0.41) |
+|30-39   |0.14 (0.01, 1.02)   |0.20 (0.11, 0.35) |
+|40-49   |0.16 (0.01, 1.19)   |0.52 (0.31, 0.87) |
+|50-59   |-                   |-                 |
+|60-69   |5.88 (1.80, 23.39)  |2.86 (1.59, 5.26) |
+|70+     |17.71 (4.74, 82.15) |4.92 (2.79, 8.95) |
+
+**Take aways from OR of death comparison**
+
+- It looks like the pattern of relative mortality is similar
+  in MERS-CoV and nCoV-2019 even if absolute rates are different.
+- The paucity of data on age specific deaths in the current data 
+  set for nCoV-2019 means uncertainty is huge
+- Still assuming these are similar in a relative sense seems
+  reasonable.
+
+### Thought Experiment
+
+What if nCoV symptomatic and death rates were identical to 
+those of MERS-CoV. How many cases would the current line
+list represent? How about the full data if they follow 
+a similar age distribution?
+
+Using mortality and infection rates for this paper 
+in AJE on MERS-CoV symptomatic ratios and IFRs
+ratios (10.1093/aje/kwv452), and a lot of assumptions:
+
+1. Age distribution of all cases looks like line list cases.
+2. Age distribution of deaths looks like line list deaths.
+3. Confirmed cases (4,474) are roughly equal to symptomatic cases.
+4. There are 107 deaths.
+5. The symptomatic ratio is the same as MERS.
+6. All line list cases that will die have died.
+
+**Table:** Implied number of cases and needed ratio of IFR
+in nCoV and MERS-CoV to reconcile deaths and implied cases.
+
+
+|Age     | pr alive| pr dead| est. cases| est. dead| MERS symptomatic ratio| MERS IFR| Implied Infections by SR| Implied Infections by IFR| IFR Ratio to Reconcile|
+|:-------|--------:|-------:|----------:|---------:|----------------------:|--------:|------------------------:|-------------------------:|----------------------:|
+|0-9     |     0.02|    0.00|      89.48|      0.00|                   0.11|     0.10|                   813.45|                      0.00|                   0.00|
+|10-19   |     0.04|    0.00|     178.96|      0.00|                   0.11|     0.05|                  1626.91|                      0.00|                   0.00|
+|20-29   |     0.10|    0.00|     425.03|      0.00|                   0.14|     0.05|                  3035.93|                      0.00|                   0.00|
+|30-39   |     0.22|    0.03|    1006.65|      2.74|                   0.23|     0.08|                  4376.74|                     34.29|                   0.01|
+|40-49   |     0.20|    0.03|     872.43|      2.74|                   0.39|     0.17|                  2237.00|                     16.14|                   0.01|
+|50-59   |     0.14|    0.10|     648.73|     10.97|                   0.60|     0.38|                  1081.22|                     28.88|                   0.03|
+|60-69   |     0.16|    0.41|     738.21|     43.90|                   0.78|     0.63|                   946.42|                     69.68|                   0.07|
+|70+     |     0.12|    0.44|     514.51|     46.64|                   0.88|     0.79|                   584.67|                     59.04|                   0.10|
+|Overall |     1.00|    1.00|    4474.00|    107.00|                   0.46|     0.31|                 14702.34|                    208.03|                   0.02|
+
+So, if the symptomatic ratio for nCoV 2019 is similar to what was
+implied by the confirmed cases of MERS-CoV (and other assumptions
+hold) the following things are
+true.:
+
+- There are are at least 14,700 nCoV-2019 infections out there on
+  27-1-2020. This is likely low as the 4,474 reported cases are
+  likely a bit lower than there actually are.
+- If this is the case, the IFR for nCoV is likely smaller than
+  1/50th of that of MERS-CoV or lower 
+  (so less than 6 deaths per 1,000 infections)
+- The difference is bigger in younger individuals (1/100th or less)
+  than older ones (1/10th).
+
+**Note this is interesting note it is the result of a 
+thought experiment only!!!**
+
+
 ## Basic Epi Summary 1-25-2020
 
 Three goals for today:

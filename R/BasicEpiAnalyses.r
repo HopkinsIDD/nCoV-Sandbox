@@ -59,10 +59,12 @@ OR_table_gender <- function(data) {
 ##' Make a table capturing the odds ratio of death by age cat
 ##' 
 ##' @param data the data inclding an age_cat column
+##' @param combine_CIs should we combine the confidence intervals
+##'    into a single entry, or hav two separate columns
 ##' 
 ##' @return a data frame with includein colums with OR and CI
 ##' 
-OR_table_age <- function(data) {
+OR_table_age <- function(data, combine_CIs=TRUE) {
   age_odds <- data %>%
     drop_na(age_cat)%>%
     group_by(age_cat,death)%>%
@@ -71,16 +73,28 @@ OR_table_age <- function(data) {
     pivot_wider(names_from = death,values_from=`n()`) %>%
     replace_na(list(dead=0))
   
-  data$age_cat <- relevel(data$age_cat, ref="(50,60]")
+  if ("(50,60]"%in%data$age_cat) {
+    data$age_cat <- relevel(data$age_cat, ref="(50,60]")
+  } else {
+    data$age_cat <- relevel(data$age_cat, ref="50-59")
+  }
+  
   age_odds_mdl <- glm(death~age_cat, data=data,
                       family=binomial)
   
+  n_coefs <- length(age_odds_mdl$coef)
   age_odds$OR <- c(exp(age_odds_mdl$coef[2:6]),1,
-                   exp(age_odds_mdl$coef[7:9]))
+                   exp(age_odds_mdl$coef[7:n_coefs]))
 
-  tmp <- round(exp(confint(age_odds_mdl)),2)
-  tmp <- apply(tmp, 1, paste, collapse=",")
-  age_odds$CI <- c(tmp[2:6],"-",tmp[7:9])
+  if (combine_CIs) {
+    tmp <- round(exp(confint(age_odds_mdl)),2)
+    tmp <- apply(tmp, 1, paste, collapse=",")
+    age_odds$CI <- c(tmp[2:6],"-",tmp[7:n_coefs])
+  } else {
+      tmp <-exp(confint(age_odds_mdl))
+      age_odds$CI_low = c(tmp[2:6,1],1,tmp[7:n_coefs,1])
+      age_odds$CI_high = c(tmp[2:6,2],1,tmp[7:n_coefs,2])
+  }
   
   return(age_odds)
   

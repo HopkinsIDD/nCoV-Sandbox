@@ -20,6 +20,196 @@ This is a bit of an excercise in radical transparency, and things are going star
 
 # Analytic Blog
 
+## Basic Epi Summary 1-27-2020
+
+First goal for the day, dig in deeper on the age specific data
+and compare with the MERS-CoV data in a bit more detail.
+
+First as always, load and sumarize the most recent Kudos line 
+list (https://docs.google.com/spreadsheets/d/1jS24DjSPVWa4iuxuD4OAXrE3QeI8c9BC1hSlqr-NMiU/edit#gid=1187587451)
+
+```{r, echo=FALSE, message=FALSE}
+  source("R/DataLoadUtils.r")
+  source("R/BasicEpiAnalyses.r")
+
+
+  kudos <- readKudos2("data/Kudos Line List-1-27-2020.csv") %>%
+   mutate(age_cat = cut(age, seq(0,100,10)))
+  
+  grid.arrange(age_dist_graph(kudos),
+               epi_curve_reported_cases(kudos),
+               nrow=2)
+  
+```
+Note that we don't have any linelist information on the deaths
+that occured before arou 1/15 in this line lisat. Moving forward with this data comparing with MERS-CoV data from Saudi Arabia 
+through summer 2014.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+  mers_dat <- read_csv("data/MERSDeathPublic.csv", 
+                       col_types = cols(age_class=col_factor(levels = c("0-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-69", "70+"))))
+
+  ##make look like the kudos dat enough for us to run same table
+  mers_dat <- mers_dat %>% rename(death=died) %>% 
+    rename(age_cat=age_class)
+  
+  mers_OR_tbl <- OR_table_age(mers_dat, combine_CIs = FALSE)
+ 
+  #make the nCoV table look like the MERS one for a more direct 
+  #comparison.
+   
+  kudos <- kudos %>% 
+    mutate(age_cat=cut(age,breaks=c(0,10,20,30,40,50,60,70,1000),
+                       labels=c("0-9","10-19",
+                                "20-29","30-39",
+                                "40-49","50-59",
+                                "60-69","70+")))
+  
+  
+  ##Drop the catagories <30 due to lack of data.
+  age_OR_tbl <- OR_table_age(kudos, combine_CIs = FALSE)
+  
+  ##Make everything under 30 be NA
+  age_OR_tbl$OR[1:3] <- NA
+  age_OR_tbl$CI_low[1:3] <- NA
+  age_OR_tbl$CI_high[1:3] <- NA
+  
+  ##combine to plot
+  comb_OR_tbl <- bind_rows(nCoV=age_OR_tbl,
+                           MERS=mers_OR_tbl, .id="disease")
+  
+  comb_OR_tbl$label <- sprintf("%1.2f (%1.2f, %1.2f)", 
+                              comb_OR_tbl$OR,
+                              comb_OR_tbl$CI_low,
+                              comb_OR_tbl$CI_high)
+  comb_OR_tbl$label[comb_OR_tbl$OR==1] <- NA
+  
+ ggplot(comb_OR_tbl, aes(x=age_cat, y=OR, color=disease, label=label)) +
+    geom_pointrange(aes(ymin=CI_low, ymax=CI_high),
+                     position = position_dodge2(width = 0.5, padding = 0.5)) +
+    scale_y_log10() + ylab("OR of death")+
+    xlab("Age") +
+   theme_bw()
+ 
+comb_OR_wide <- comb_OR_tbl %>% 
+  select(disease,age_cat,label) %>% 
+  pivot_wider(names_from=disease, values_from = label) 
+
+comb_OR_wide[6,c("nCoV","MERS")] <- "-"
+comb_OR_wide$nCoV[1:3] <- "-"
+```
+
+**Figure:** Odds ratio of death by age group for MERS=CoV and nCoV-2019. Log-scale.
+
+
+**Table:** Odds ratio of death by age group for MERS=CoV and nCoV-2019
+```{r, echo=FALSE}
+
+kable(comb_OR_wide)
+  
+
+```
+
+**Take aways from OR of death comparison**
+
+- It looks like the pattern of relative mortality is similar
+  in MERS-CoV and nCoV-2019 even if absolute rates are different.
+- The paucity of data on age specific deaths in the current data 
+  set for nCoV-2019 means uncertainty is huge
+- Still assuming these are similar in a relative sense seems
+  reasonable.
+
+### Thought Experiment
+
+What if nCoV symptomatic and death rates were identical to 
+those of MERS-CoV. How many cases would the current line
+list represent? How about the full data if they follow 
+a similar age distribution?
+
+Using mortality and infection rates for this paper 
+in AJE on MERS-CoV symptomatic ratios and IFRs
+ratios (10.1093/aje/kwv452), and a lot of assumptions:
+
+1. Age distribution of all cases looks like line list cases.
+2. Age distribution of deaths looks like line list deaths.
+3. Confirmed cases (4,474) are roughly equal to symptomatic cases.
+4. There are 107 deaths.
+5. The symptomatic ratio is the same as MERS.
+6. All line list cases that will die have died.
+
+**Table:** Implied number of cases and needed ratio of IFR
+in nCoV and MERS-CoV to reconcile deaths and implied cases.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+  sym_fat_ratios <-
+    read_csv("data/MERSSymptom-FatalityRatios.csv")
+
+  total_cases <- sum(age_OR_tbl$alive +
+                       age_OR_tbl$dead)
+  total_dead <- sum(age_OR_tbl$dead)
+  
+
+  implied_inf_table <- age_OR_tbl %>% 
+    inner_join(sym_fat_ratios) %>% 
+    mutate(total=alive+dead) %>% 
+    mutate(prop=total/total_cases)%>%
+    mutate(prop_dead=dead/total_dead)%>%
+    mutate(est_total=prop*4474)%>%
+    mutate(est_dead=prop_dead*107) %>% 
+    mutate(sr_implied=est_total/sym_ratio) %>% 
+    mutate(ifr_implied=est_dead/ifr) %>%
+    select(age_cat,prop, prop_dead, est_total, 
+           est_dead, sym_ratio, ifr,
+           sr_implied, ifr_implied) %>%
+    ungroup() #%>%
+  
+  with(implied_inf_table, {
+    tmp<<-data.frame(age_cat="Overall",
+            prop=1, prop_dead=1,
+            est_total=sum(est_total),
+            est_dead=sum(est_dead),
+            sym_ratio=weighted.mean(sym_ratio, prop),
+            ifr=weighted.mean(ifr, prop),
+            sr_implied=sum(sr_implied),
+            ifr_implied=sum(ifr_implied))
+  })
+  
+  implied_inf_table <- implied_inf_table %>% 
+    bind_rows(tmp)%>%
+    mutate(ifr_reduction = est_dead/(ifr*sr_implied))
+
+  
+  
+  
+  kable(implied_inf_table, digits = 2 ,
+        col.names =c("Age","pr alive","pr dead","est. cases",
+                     "est. dead",
+                     "MERS symptomatic ratio",
+                     "MERS IFR", "Implied Infections by SR",
+                     "Implied Infections by IFR",
+                     "IFR Ratio to Reconcile"))  
+  
+  
+```
+
+So, if the symptomatic ratio for nCoV 2019 is similar to what was
+implied by the confirmed cases of MERS-CoV (and other assumptions
+hold) the following things are
+true.:
+
+- There are are at least 14,700 nCoV-2019 infections out there on
+  27-1-2020. This is likely low as the 4,474 reported cases are
+  likely a bit lower than there actually are.
+- If this is the case, the IFR for nCoV is likely smaller than
+  1/50th of that of MERS-CoV or lower 
+  (so less than 6 deaths per 1,000 infections)
+- The difference is bigger in younger individuals (1/100th or less)
+  than older ones (1/10th).
+
+**Note this is interesting note it is the result of a 
+thought experiment only!!!**
+
+
 ## Basic Epi Summary 1-25-2020
 
 Three goals for today:
