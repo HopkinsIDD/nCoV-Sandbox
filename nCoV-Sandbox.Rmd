@@ -23,6 +23,7 @@ This is a bit of an excercise in radical transparency, and things are going star
 
 # Analytic Blog
 
+
 ## Reconstructing Past Incidence Using Cumulative Reports (1-28-2020)
 
 Goal is to do a better job of recreating the daily case counts

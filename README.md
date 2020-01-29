@@ -1,5 +1,9 @@
-
-# nCoV 2019 Sandbox
+---
+title: "nCoV 2019 Sandbox"
+output:
+  html_document:
+    df_print: paged
+---
 
 
 
@@ -11,6 +15,7 @@ This is a bit of an excercise in radical transparency, and things are going star
 
 # Analytic Blog
 
+
 ## Reconstructing Past Incidence Using Cumulative Reports (1-28-2020)
 
 Goal is to do a better job of recreating the daily case counts
@@ -21,7 +26,7 @@ First let's load in the data. Currently using only
 confirmed cases (driven a bit by data source),
 but unclear how long this will be viable.
 
-![plot of chunk unnamed-chunk-58](figure/unnamed-chunk-58-1.png)![plot of chunk unnamed-chunk-58](figure/unnamed-chunk-58-2.png)
+![plot of chunk unnamed-chunk-1](figure/unnamed-chunk-1-1.png)![plot of chunk unnamed-chunk-1](figure/unnamed-chunk-1-2.png)
 
 Things looks a little funny prior to the first, but this
 does seem like it should give a rough pseudo epidemic curve for
@@ -44,12 +49,12 @@ list (https://docs.google.com/spreadsheets/d/1jS24DjSPVWa4iuxuD4OAXrE3QeI8c9BC1h
 ## Warning: Removed 31 rows containing non-finite values (stat_count).
 ```
 
-![plot of chunk unnamed-chunk-59](figure/unnamed-chunk-59-1.png)
+![plot of chunk unnamed-chunk-2](figure/unnamed-chunk-2-1.png)
 Note that we don't have any linelist information on the deaths
 that occured before arou 1/15 in this line lisat. Moving forward with this data comparing with MERS-CoV data from Saudi Arabia 
 through summer 2014.
 
-![plot of chunk unnamed-chunk-60](figure/unnamed-chunk-60-1.png)
+![plot of chunk unnamed-chunk-3](figure/unnamed-chunk-3-1.png)
 
 **Figure:** Odds ratio of death by age group for MERS=CoV and nCoV-2019. Log-scale.
 
@@ -144,7 +149,7 @@ individual line list information.
 ## Warning: Removed 18 rows containing non-finite values (stat_count).
 ```
 
-![plot of chunk unnamed-chunk-63](figure/unnamed-chunk-63-1.png)
+![plot of chunk unnamed-chunk-6](figure/unnamed-chunk-6-1.png)
 
 Now lets look at some basic infomration on survival by age group
 and gender.
@@ -218,7 +223,7 @@ Macau.
     geom_line() + scale_y_log10()
 ```
 
-![plot of chunk unnamed-chunk-65](figure/unnamed-chunk-65-1.png)
+![plot of chunk unnamed-chunk-8](figure/unnamed-chunk-8-1.png)
 
 Looking at all provinces, so let's narrow it to places that at some 
 point experience at least 25 confimed cases and 
@@ -285,7 +290,7 @@ are looking at the cumulative report rather than the
         geom_point() + scale_y_log10() + stat_smooth(method="lm", se=FALSE)
 ```
 
-![plot of chunk unnamed-chunk-66](figure/unnamed-chunk-66-1.png)
+![plot of chunk unnamed-chunk-9](figure/unnamed-chunk-9-1.png)
 
 Leaving it there for the moment due to lack of aggregate data. 
 
@@ -324,7 +329,7 @@ Ten year increments.
     geom_bar( color="grey") + coord_flip() + xlab("Age Catergory")
 ```
 
-![plot of chunk unnamed-chunk-67](figure/unnamed-chunk-67-1.png)
+![plot of chunk unnamed-chunk-10](figure/unnamed-chunk-10-1.png)
 
 Next, are we seeing any obvious differences in mortality
 by gender or age?
@@ -375,7 +380,7 @@ super informative at this point.
 ## Warning: Removed 11 rows containing non-finite values (stat_count).
 ```
 
-![plot of chunk unnamed-chunk-69](figure/unnamed-chunk-69-1.png)
+![plot of chunk unnamed-chunk-12](figure/unnamed-chunk-12-1.png)
 A touch interesting that all deaths are early on. This suggests either (A) surveillance was really biased towards deaths in the early days, or (B) a lot of the later reports have not had time to die. 
 
 [Note that there was perviously a 1-23-2020 summary 
