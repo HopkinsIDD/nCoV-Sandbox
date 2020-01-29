@@ -5,15 +5,7 @@ output:
     df_print: paged
 ---
 
-```{r setup, include=FALSE}
-#Preamble
-require(knitr)
-require(tidyverse)
-require(gridExtra)
 
-source("R/DataLoadUtils.r")
-source("R/BasicEpiAnalyses.r")
-```
 
 # What is this?
 
@@ -33,73 +25,7 @@ First let's load in the data. Currently using only
 confirmed cases (driven a bit by data source),
 but unclear how long this will be viable.
 
-```{r, message=FALSE, echo=FALSE, warning=FALSE}
-  
-   #Load in the JHU CSSE Data
-   jhucsse <- read_JHUCSSE_cases("2020-01-28 23:59", 
-                                 append_wiki = TRUE)
-  
-  ##Continue to filter to China for the moment.
-  ##also total the suspected and confirmed cases.
-  jhucsse_china <- jhucsse %>% 
-    filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
-  
-  
- 
-   
-  ## Fit a monotinically increasing spline to each area with
-  ## at least 25 cases at any ppint
-  tmp <- jhucsse_china%>%filter(Confirmed>=25)
-  tmp <- unique(tmp$Province_State)
-    
-  ## Look at consitencey in exponential groqth by areas.
-  analyze <-   jhucsse_china %>% drop_na(Confirmed) %>% 
-     filter(Province_State%in%tmp)
-   
-  
-  ##Get the implied daily incidence for each province
-  ##by fitting a monitonically increasing spline and then 
-  ##taking the difference (a little less sensitive to 
-  ##perturbations in reporting than taking raw difference).
-  ##Making sure only to infer over trhe suport
-  tmp_dt_seq <- seq(ISOdate(2019,12,1), ISOdate(2020,1,28), "days")
-  incidence_data<- analyze %>% nest(-Province_State) %>%
-      mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Confirmed,
-                                       method="hyman"))) %>%
-    mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)], 
-                                         Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
-      unnest(Incidence) %>% select(-data) %>% select(-cs) 
-  
-inc_plt <- incidence_data%>%filter(Date>"2020-1-1") %>% 
-  ggplot(aes(x=Date,   y=Incidence, fill=Province_State)) +
-  geom_bar(stat="identity", position="stack") +
-  theme_bw()+theme(legend.position="bottom")
-  
-
-inc_plt
-
-
-## Now let's look at Hubei a little bit to see how we feel about
-##this approach. Compare with just looking at raw differences.
-
-jhucsse_hubei <-jhucsse %>% 
-  filter(Province_State=="Hubei") %>% 
-  filter(Update>="2020-01-22")
-
-compare_points <- data.frame(Date=sort(jhucsse_hubei$Update[-1]),
-                      Incidence=diff(sort(jhucsse_hubei$Confirmed)))
-
-incidence_data%>%filter(Date>"2020-1-1") %>% 
-  filter(Province_State=="Hubei") %>% 
-  ggplot(aes(x=Date,   y=Incidence))+
-  geom_bar(stat="identity", position="stack") +
-  theme_bw() + 
-  geom_point(data=compare_points,
-             x=round(compare_points$Date,"day")+
-               as.difftime(12,unit="hours"), 
-             y=compare_points$Incidence, color="green")
-
-```
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-1-1.png" width="672" /><img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-1-2.png" width="672" />
 
 Things looks a little funny prior to the first, but this
 does seem like it should give a rough pseudo epidemic curve for
@@ -113,87 +39,37 @@ and compare with the MERS-CoV data in a bit more detail.
 First as always, load and sumarize the most recent Kudos line 
 list (https://docs.google.com/spreadsheets/d/1jS24DjSPVWa4iuxuD4OAXrE3QeI8c9BC1hSlqr-NMiU/edit#gid=1187587451)
 
-```{r, echo=FALSE, message=FALSE}
-  source("R/DataLoadUtils.r")
-  source("R/BasicEpiAnalyses.r")
 
-
-  kudos <- readKudos2("data/Kudos Line List-1-27-2020.csv") %>%
-   mutate(age_cat = cut(age, seq(0,100,10)))
-  
-  grid.arrange(age_dist_graph(kudos),
-               epi_curve_reported_cases(kudos),
-               nrow=2)
-  
 ```
+## Warning: The following named parsers don't match the column names: date
+```
+
+```
+## Warning: Removed 31 rows containing non-finite values (stat_count).
+```
+
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-2-1.png" width="672" />
 Note that we don't have any linelist information on the deaths
 that occured before arou 1/15 in this line lisat. Moving forward with this data comparing with MERS-CoV data from Saudi Arabia 
 through summer 2014.
 
-```{r, warning=FALSE, message=FALSE, echo=FALSE}
-  mers_dat <- read_csv("data/MERSDeathPublic.csv", 
-                       col_types = cols(age_class=col_factor(levels = c("0-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-69", "70+"))))
-
-  ##make look like the kudos dat enough for us to run same table
-  mers_dat <- mers_dat %>% rename(death=died) %>% 
-    rename(age_cat=age_class)
-  
-  mers_OR_tbl <- OR_table_age(mers_dat, combine_CIs = FALSE)
- 
-  #make the nCoV table look like the MERS one for a more direct 
-  #comparison.
-   
-  kudos <- kudos %>% 
-    mutate(age_cat=cut(age,breaks=c(0,10,20,30,40,50,60,70,1000),
-                       labels=c("0-9","10-19",
-                                "20-29","30-39",
-                                "40-49","50-59",
-                                "60-69","70+")))
-  
-  
-  ##Drop the catagories <30 due to lack of data.
-  age_OR_tbl <- OR_table_age(kudos, combine_CIs = FALSE)
-  
-  ##Make everything under 30 be NA
-  age_OR_tbl$OR[1:3] <- NA
-  age_OR_tbl$CI_low[1:3] <- NA
-  age_OR_tbl$CI_high[1:3] <- NA
-  
-  ##combine to plot
-  comb_OR_tbl <- bind_rows(nCoV=age_OR_tbl,
-                           MERS=mers_OR_tbl, .id="disease")
-  
-  comb_OR_tbl$label <- sprintf("%1.2f (%1.2f, %1.2f)", 
-                              comb_OR_tbl$OR,
-                              comb_OR_tbl$CI_low,
-                              comb_OR_tbl$CI_high)
-  comb_OR_tbl$label[comb_OR_tbl$OR==1] <- NA
-  
- ggplot(comb_OR_tbl, aes(x=age_cat, y=OR, color=disease, label=label)) +
-    geom_pointrange(aes(ymin=CI_low, ymax=CI_high),
-                     position = position_dodge2(width = 0.5, padding = 0.5)) +
-    scale_y_log10() + ylab("OR of death")+
-    xlab("Age") +
-   theme_bw()
- 
-comb_OR_wide <- comb_OR_tbl %>% 
-  select(disease,age_cat,label) %>% 
-  pivot_wider(names_from=disease, values_from = label) 
-
-comb_OR_wide[6,c("nCoV","MERS")] <- "1"
-comb_OR_wide$nCoV[1:3] <- "-"
-```
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-3-1.png" width="672" />
 
 **Figure:** Odds ratio of death by age group for MERS=CoV and nCoV-2019. Log-scale.
 
 
 **Table:** Odds ratio of death by age group for MERS=CoV and nCoV-2019
-```{r, echo=FALSE}
 
-kable(comb_OR_wide)
-  
-
-```
+age_cat   nCoV                  MERS              
+--------  --------------------  ------------------
+0-9       -                     0.41 (0.11, 1.26) 
+10-19     -                     0.19 (0.05, 0.52) 
+20-29     -                     0.22 (0.12, 0.41) 
+30-39     0.14 (0.01, 1.02)     0.20 (0.11, 0.35) 
+40-49     0.16 (0.01, 1.19)     0.52 (0.31, 0.87) 
+50-59     1                     1                 
+60-69     5.88 (1.80, 23.39)    2.86 (1.59, 5.26) 
+70+       17.71 (4.74, 82.15)   4.92 (2.79, 8.95) 
 
 **Take aways from OR of death comparison**
 
@@ -225,57 +101,18 @@ ratios (10.1093/aje/kwv452), and a lot of assumptions:
 **Table:** Implied number of cases and needed ratio of IFR
 in nCoV and MERS-CoV to reconcile deaths and implied cases.
 
-```{r, echo=FALSE, warning=FALSE, message=FALSE}
-  sym_fat_ratios <-
-    read_csv("data/MERSSymptom-FatalityRatios.csv")
 
-  total_cases <- sum(age_OR_tbl$alive +
-                       age_OR_tbl$dead)
-  total_dead <- sum(age_OR_tbl$dead)
-  
-
-  implied_inf_table <- age_OR_tbl %>% 
-    inner_join(sym_fat_ratios) %>% 
-    mutate(total=alive+dead) %>% 
-    mutate(prop=total/total_cases)%>%
-    mutate(prop_dead=dead/total_dead)%>%
-    mutate(est_total=prop*4474)%>%
-    mutate(est_dead=prop_dead*107) %>% 
-    mutate(sr_implied=est_total/sym_ratio) %>% 
-    mutate(ifr_implied=est_dead/ifr) %>%
-    select(age_cat,prop, prop_dead, est_total, 
-           est_dead, sym_ratio, ifr,
-           sr_implied, ifr_implied) %>%
-    ungroup() #%>%
-  
-  with(implied_inf_table, {
-    tmp<<-data.frame(age_cat="Overall",
-            prop=1, prop_dead=1,
-            est_total=sum(est_total),
-            est_dead=sum(est_dead),
-            sym_ratio=weighted.mean(sym_ratio, prop),
-            ifr=weighted.mean(ifr, prop),
-            sr_implied=sum(sr_implied),
-            ifr_implied=sum(ifr_implied))
-  })
-  
-  implied_inf_table <- implied_inf_table %>% 
-    bind_rows(tmp)%>%
-    mutate(ifr_reduction = est_dead/(ifr*sr_implied))
-
-  
-  
-  
-  kable(implied_inf_table, digits = 2 ,
-        col.names =c("Age","pr alive","pr dead","est. cases",
-                     "est. dead",
-                     "MERS symptomatic ratio",
-                     "MERS IFR", "Implied Infections by SR",
-                     "Implied Infections by IFR",
-                     "IFR Ratio to Reconcile"))  
-  
-  
-```
+Age        pr alive   pr dead   est. cases   est. dead   MERS symptomatic ratio   MERS IFR   Implied Infections by SR   Implied Infections by IFR   IFR Ratio to Reconcile
+--------  ---------  --------  -----------  ----------  -----------------------  ---------  -------------------------  --------------------------  -----------------------
+0-9            0.02      0.00        89.48        0.00                     0.11       0.10                     813.45                        0.00                     0.00
+10-19          0.04      0.00       178.96        0.00                     0.11       0.05                    1626.91                        0.00                     0.00
+20-29          0.10      0.00       425.03        0.00                     0.14       0.05                    3035.93                        0.00                     0.00
+30-39          0.22      0.03      1006.65        2.74                     0.23       0.08                    4376.74                       34.29                     0.01
+40-49          0.20      0.03       872.43        2.74                     0.39       0.17                    2237.00                       16.14                     0.01
+50-59          0.14      0.10       648.73       10.97                     0.60       0.38                    1081.22                       28.88                     0.03
+60-69          0.16      0.41       738.21       43.90                     0.78       0.63                     946.42                       69.68                     0.07
+70+            0.12      0.44       514.51       46.64                     0.88       0.79                     584.67                       59.04                     0.10
+Overall        1.00      1.00      4474.00      107.00                     0.46       0.31                   14702.34                      208.03                     0.02
 
 So, if the symptomatic ratio for nCoV 2019 is similar to what was
 implied by the confirmed cases of MERS-CoV (and other assumptions
@@ -306,30 +143,45 @@ Three goals for today:
 Age distribution and epicurve for cases where we have 
 individual line list information. 
 
-```{r, echo=FALSE, message=FALSE}
-  source("R/DataLoadUtils.r")
-  source("R/BasicEpiAnalyses.r")
 
-
-  kudos <- readKudos2("data/Kudos Line List-1-25-2020.csv") %>%
-   mutate(age_cat = cut(age, seq(0,100,10)))
-  
-  grid.arrange(age_dist_graph(kudos),
-               epi_curve_reported_cases(kudos),
-               nrow=2)
-  
 ```
+## Warning: Removed 18 rows containing non-finite values (stat_count).
+```
+
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-6-1.png" width="672" />
 
 Now lets look at some basic infomration on survival by age group
 and gender.
 
-```{r, warning=FALSE, echo=FALSE}
 
-  kable(OR_table_age(kudos))
-
-  kable(OR_table_gender(kudos))
-  
 ```
+## Waiting for profiling to be done...
+```
+
+
+
+age_cat    alive   dead           OR  CI                       
+--------  ------  -----  -----------  -------------------------
+(0,10]         2      0    0.0000000  NA,2.4442929329126e+305  
+(10,20]        4      0    0.0000000  NA,1.54362475336342e+123 
+(20,30]       16      0    0.0000000  NA,5.68642814649887e+36  
+(30,40]       25      1    0.1900000  0.01,1.41                
+(40,50]       26      1    0.1826923  0.01,1.36                
+(50,60]       19      4    1.0000000  -                        
+(60,70]       10     16    7.6000000  2.15,32.49               
+(70,80]        1      7   33.2500000  4.34,723.13              
+(80,90]        1     10   47.5000000  6.56,1014.13             
+
+```
+## Waiting for profiling to be done...
+```
+
+
+
+gender    alive   dead          OR  CI        
+-------  ------  -----  ----------  ----------
+male         72     27   1.0000000  -         
+female       35     12   0.9142857  0.58,1.99 
 
 **Take aways from the line list data:**
 
@@ -348,9 +200,16 @@ and the basis for most of our predictive style analyses.
 First we will focuse on Mainland China, Hong Kong and 
 Macau.
 
-```{r, message=FALSE}
+
+```r
   jhucsse <- read_JHUCSSE_cases("2020-01-25 23:59", append_wiki = TRUE)
-    
+```
+
+```
+## Warning: All formats failed to parse. No formats found.
+```
+
+```r
   ##Filter to China:
   jhucsse_china <- jhucsse %>% 
     filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong"))
@@ -361,10 +220,9 @@ Macau.
     filter(Update>"2020-01-14") %>% 
   ggplot(aes(x=Update, y=Confirmed, col=Province_State)) +
     geom_line() + scale_y_log10()
-  
-  
-  
 ```
+
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-8-1.png" width="672" />
 
 Looking at all provinces, so let's narrow it to places that at some 
 point experience at least 25 confimed cases and 
@@ -373,7 +231,8 @@ look vs. a straight log-linear line.
 Note that is is not quite right for real exponential growth since we 
 are looking at the cumulative report rather than the 
 
-```{r}
+
+```r
     tmp <- jhucsse_china%>%filter(Confirmed>=25)
     tmp <- unique(tmp$Province_State)
     
@@ -387,9 +246,38 @@ are looking at the cumulative report rather than the
     slopes <- analyze %>% nest(-Province_State) %>%
       mutate(slope=map_dbl(data, ~lm(log10(.$Confirmed)~as.Date(.$Update))$coef[2])) %>%
       select(-data) %>% mutate(exp_scale=10^(slope))
-    
+```
+
+```
+## Warning: All elements of `...` must be named.
+## Did you want `data = c(Country_Region, Update, Confirmed, Deaths, Recovered, Suspected, 
+##     Demised)`?
+```
+
+```r
     kable(slopes, digits=2)
-    
+```
+
+
+
+Province_State    slope   exp_scale
+---------------  ------  ----------
+Hubei              0.14        1.37
+Zhejiang           0.29        1.96
+Guangdong          0.24        1.75
+Henan              0.61        4.07
+Chongqing          0.46        2.89
+Hunan              0.44        2.77
+Anhui              0.41        2.58
+Beijing            0.18        1.52
+Sichuan            0.37        2.35
+Shanghai           0.20        1.58
+Shandong           0.41        2.55
+Jiangxi            0.36        2.27
+Guangxi            0.41        2.57
+Jiangsu            0.40        2.49
+
+```r
     #ggplot(slopes, aes(x=Province_State, y=slope)) +
     #         geom_bar(stat="identity") + coord_flip()
     
@@ -399,8 +287,9 @@ are looking at the cumulative report rather than the
       filter(Province_State%in%tmp)%>%
       ggplot(aes(x=Update, y=Confirmed, col=Province_State)) +
         geom_point() + scale_y_log10() + stat_smooth(method="lm", se=FALSE)
-    
 ```
+
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-9-1.png" width="672" />
 
 Leaving it there for the moment due to lack of aggregate data. 
 
@@ -425,7 +314,8 @@ in the coming days.
 
 First just take a rough look at the age distribution of cases.
 Ten year increments.
-```{r}
+
+```r
   source("R/DataLoadUtils.r")
 
   kudos <- readKudos2("data/Kudos Line List-1-24-2020.csv") %>%
@@ -436,56 +326,41 @@ Ten year increments.
   ggplot(drop_na(kudos, age_cat), 
          aes(x=age_cat, fill=as.factor(death))) + 
     geom_bar( color="grey") + coord_flip() + xlab("Age Catergory")
-  
-
 ```
+
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-10-1.png" width="672" />
 
 Next, are we seeing any obvious differences in mortality
 by gender or age?
 
-```{r, echo=FALSE, warning=FALSE}
 
-  gender_odds <- kudos%>%group_by(gender, death)%>%
-    summarize(n())%>%
-    mutate(death=ifelse(death,"dead","alive"))%>%
-    pivot_wider(names_from = death,values_from=`n()`)
-
-    #%>%
-    #mutate(OR=dead/alive)
-  
-  #gender_odds <- gender_odds%>%mutate(OR=OR/gender_odds$OR[1])
-  gender_odds_mdl <- glm(death~gender, data=kudos,
-                         family=binomial)
-  gender_odds$OR <- c(1, exp(gender_odds_mdl$coef[2]))
-  gender_odds$CI <- c("-",
-                      paste(round(exp(confint(gender_odds_mdl)[,2]),2),
-                            collapse = ","))
-  
-  kable(gender_odds, digits=2)
-  
-  
-  age_odds <- kudos %>%
-    drop_na(age_cat)%>%
-    group_by(age_cat,death)%>%
-    summarize(n())%>%
-    mutate(death=ifelse(death,"dead","alive"))%>%
-    pivot_wider(names_from = death,values_from=`n()`) %>%
-    replace_na(list(dead=0))
-  
-  kudos$age_cat <- relevel(kudos$age_cat, ref="(50,60]")
-  age_odds_mdl <- glm(death~age_cat, data=kudos,
-                         family=binomial)
-  age_odds$OR <- c(exp(age_odds_mdl$coef[2:5]),1,
-                   exp(age_odds_mdl$coef[6:8]))
-  tmp <- round(exp(confint(age_odds_mdl)),2)
-  tmp <- apply(tmp, 1, paste, collapse=",")
-  age_odds$CI <- c(tmp[2:5],"-",tmp[6:8])
-  
-
-  kable(age_odds, digits = 2)
-  
- 
 ```
+## Waiting for profiling to be done...
+```
+
+
+
+gender    alive   dead     OR  CI        
+-------  ------  -----  -----  ----------
+male         54     15   1.00  -         
+female       23      8   1.25  0.48,3.31 
+
+```
+## Waiting for profiling to be done...
+```
+
+
+
+age_cat    alive   dead       OR  CI                      
+--------  ------  -----  -------  ------------------------
+(10,20]        2      0     0.00  0,2.393735337629e+91    
+(20,30]        8      0     0.00  NA,8.12332729629327e+59 
+(30,40]       20      1     0.70  0.03,18.71              
+(40,50]       21      1     0.67  0.02,17.8               
+(50,60]       14      1     1.00  -                       
+(60,70]        8      9    15.75  2.34,319.1              
+(70,80]        1      3    42.00  2.83,1775.73            
+(80,90]        1      8   112.00  9.58,4388.42            
 
 Even as sparse as this data is, this is showing some clear
 evidence of and age relationship. 
@@ -494,11 +369,17 @@ evidence of and age relationship.
 Epidemic curve of line list cases. Not
 super informative at this point. 
 
-```{r}
+
+```r
   ggplot(kudos, aes(x=symptom_onset, fill=as.factor(death))) +
   geom_bar()
+```
 
 ```
+## Warning: Removed 11 rows containing non-finite values (stat_count).
+```
+
+<img src="nCoV-Sandbox_files/figure-html/unnamed-chunk-12-1.png" width="672" />
 A touch interesting that all deaths are early on. This suggests either (A) surveillance was really biased towards deaths in the early days, or (B) a lot of the later reports have not had time to die. 
 
 [Note that there was perviously a 1-23-2020 summary 

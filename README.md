@@ -1,13 +1,31 @@
 
-# nCoV Sandbox
+# nCoV 2019 Sandbox
+
+
 
 # What is this?
 
 The nCoV Sandbox is a running analytic blog we are "writing" as we try to apply some methods we had in the very early stages of development, and some old friends, to the 2019 nCoV outbreak. It also is us trying to run some analyses to get our on handle on, and keep up to date on, the epidmeiology of the emerging epidemic.
 
-This is a bit of an excercise in radical transparency, and things are going start out very messy...but will hopefully get cleaner and more meaningful as things go. But the old stuff will (for the moment) remain at the botto for posterity.
+This is a bit of an excercise in radical transparency, and things are going start out very messy...but will hopefully get cleaner and more meaningful as things go. But the old stuff will (for the moment) remain at the bottom for posterity.
 
 # Analytic Blog
+
+## Reconstructing Past Incidence Using Cumulative Reports (1-28-2020)
+
+Goal is to do a better job of recreating the daily case counts
+in each area so we have implied epidemic curves to work with for
+some of the more sophisticated stuff (hopefully) to come. 
+
+First let's load in the data. Currently using only
+confirmed cases (driven a bit by data source),
+but unclear how long this will be viable.
+
+![plot of chunk unnamed-chunk-58](figure/unnamed-chunk-58-1.png)![plot of chunk unnamed-chunk-58](figure/unnamed-chunk-58-2.png)
+
+Things looks a little funny prior to the first, but this
+does seem like it should give a rough pseudo epidemic curve for
+the purpose of anlaysis.
 
 ## Basic Epi Summary 1-27-2020
 
@@ -26,12 +44,12 @@ list (https://docs.google.com/spreadsheets/d/1jS24DjSPVWa4iuxuD4OAXrE3QeI8c9BC1h
 ## Warning: Removed 31 rows containing non-finite values (stat_count).
 ```
 
-![plot of chunk unnamed-chunk-3](figure/unnamed-chunk-3-1.png)
+![plot of chunk unnamed-chunk-59](figure/unnamed-chunk-59-1.png)
 Note that we don't have any linelist information on the deaths
 that occured before arou 1/15 in this line lisat. Moving forward with this data comparing with MERS-CoV data from Saudi Arabia 
 through summer 2014.
 
-![plot of chunk unnamed-chunk-4](figure/unnamed-chunk-4-1.png)
+![plot of chunk unnamed-chunk-60](figure/unnamed-chunk-60-1.png)
 
 **Figure:** Odds ratio of death by age group for MERS=CoV and nCoV-2019. Log-scale.
 
@@ -45,7 +63,7 @@ through summer 2014.
 |20-29   |-                   |0.22 (0.12, 0.41) |
 |30-39   |0.14 (0.01, 1.02)   |0.20 (0.11, 0.35) |
 |40-49   |0.16 (0.01, 1.19)   |0.52 (0.31, 0.87) |
-|50-59   |-                   |-                 |
+|50-59   |1                   |1                 |
 |60-69   |5.88 (1.80, 23.39)  |2.86 (1.59, 5.26) |
 |70+     |17.71 (4.74, 82.15) |4.92 (2.79, 8.95) |
 
@@ -126,7 +144,7 @@ individual line list information.
 ## Warning: Removed 18 rows containing non-finite values (stat_count).
 ```
 
-![plot of chunk unnamed-chunk-7](figure/unnamed-chunk-7-1.png)
+![plot of chunk unnamed-chunk-63](figure/unnamed-chunk-63-1.png)
 
 Now lets look at some basic infomration on survival by age group
 and gender.
@@ -181,7 +199,13 @@ Macau.
 
 ```r
   jhucsse <- read_JHUCSSE_cases("2020-01-25 23:59", append_wiki = TRUE)
-    
+```
+
+```
+## Warning: All formats failed to parse. No formats found.
+```
+
+```r
   ##Filter to China:
   jhucsse_china <- jhucsse %>% 
     filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong"))
@@ -194,7 +218,7 @@ Macau.
     geom_line() + scale_y_log10()
 ```
 
-![plot of chunk unnamed-chunk-9](figure/unnamed-chunk-9-1.png)
+![plot of chunk unnamed-chunk-65](figure/unnamed-chunk-65-1.png)
 
 Looking at all provinces, so let's narrow it to places that at some 
 point experience at least 25 confimed cases and 
@@ -222,7 +246,7 @@ are looking at the cumulative report rather than the
 
 ```
 ## Warning: All elements of `...` must be named.
-## Did you want `data = c(Country_Region, Update, Confirmed, Suspected, Recovered, Deaths, 
+## Did you want `data = c(Country_Region, Update, Confirmed, Deaths, Recovered, Suspected, 
 ##     Demised)`?
 ```
 
@@ -234,20 +258,20 @@ are looking at the cumulative report rather than the
 
 |Province_State | slope| exp_scale|
 |:--------------|-----:|---------:|
-|Hubei          |  0.14|      1.38|
-|Zhejiang       |  0.33|      2.12|
-|Guangdong      |  0.19|      1.57|
-|Henan          |  0.39|      2.46|
-|Chongqing      |  0.38|      2.38|
-|Hunan          |  0.41|      2.59|
-|Anhui          |  0.56|      3.59|
-|Beijing        |  0.19|      1.55|
-|Sichuan        |  0.31|      2.04|
-|Shanghai       |  0.20|      1.60|
-|Shandong       |  0.43|      2.67|
-|Jiangxi        |  0.42|      2.62|
-|Guangxi        |  0.43|      2.70|
-|Jiangsu        |  0.47|      2.97|
+|Hubei          |  0.14|      1.37|
+|Zhejiang       |  0.29|      1.96|
+|Guangdong      |  0.24|      1.75|
+|Henan          |  0.61|      4.07|
+|Chongqing      |  0.46|      2.89|
+|Hunan          |  0.44|      2.77|
+|Anhui          |  0.41|      2.58|
+|Beijing        |  0.18|      1.52|
+|Sichuan        |  0.37|      2.35|
+|Shanghai       |  0.20|      1.58|
+|Shandong       |  0.41|      2.55|
+|Jiangxi        |  0.36|      2.27|
+|Guangxi        |  0.41|      2.57|
+|Jiangsu        |  0.40|      2.49|
 
 ```r
     #ggplot(slopes, aes(x=Province_State, y=slope)) +
@@ -261,7 +285,7 @@ are looking at the cumulative report rather than the
         geom_point() + scale_y_log10() + stat_smooth(method="lm", se=FALSE)
 ```
 
-![plot of chunk unnamed-chunk-10](figure/unnamed-chunk-10-1.png)
+![plot of chunk unnamed-chunk-66](figure/unnamed-chunk-66-1.png)
 
 Leaving it there for the moment due to lack of aggregate data. 
 
@@ -300,7 +324,7 @@ Ten year increments.
     geom_bar( color="grey") + coord_flip() + xlab("Age Catergory")
 ```
 
-![plot of chunk unnamed-chunk-11](figure/unnamed-chunk-11-1.png)
+![plot of chunk unnamed-chunk-67](figure/unnamed-chunk-67-1.png)
 
 Next, are we seeing any obvious differences in mortality
 by gender or age?
@@ -351,7 +375,7 @@ super informative at this point.
 ## Warning: Removed 11 rows containing non-finite values (stat_count).
 ```
 
-![plot of chunk unnamed-chunk-13](figure/unnamed-chunk-13-1.png)
+![plot of chunk unnamed-chunk-69](figure/unnamed-chunk-69-1.png)
 A touch interesting that all deaths are early on. This suggests either (A) surveillance was really biased towards deaths in the early days, or (B) a lot of the later reports have not had time to die. 
 
 [Note that there was perviously a 1-23-2020 summary 
