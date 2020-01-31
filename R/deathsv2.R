@@ -71,10 +71,7 @@ rdate <- function(x,
   
 }
 
-# olddeaths <- deaths1
-# newdeaths <-   getdeltadeaths(dat2, dat3)
 
-#!!!! DEBUG HERE !!!!
   
 #' A function to simulate deaths occuring in line list
 #' @param olddeaths dataframe with pseudo line list with dates of death up until yesterday
