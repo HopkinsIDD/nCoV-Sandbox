@@ -105,13 +105,13 @@ updatedat <- function(current, bfdat, nowdat, nextdat, pconfirmed = 1){
 }
 
 # process initiatial data as of 1/30
-dat1 <- read.csv(file = "data/JHUCSSE Total Cases 1-22-2020.csv")[, c(1:4)]
-dat2 <- read.csv(file = "data/JHUCSSE Total Cases 1-23-2020.csv")[, c(1:4, 7)]
-dat3 <- read.csv(file = "data/JHUCSSE Total Cases 1-24-2020.csv")[, c(1:4, 7)]
-dat4 <- read.csv(file = "data/JHUCSSE Total Cases 1-25-2020.csv")[, c(1:4, 7)]
-dat5 <- read.csv(file = "data/JHUCSSE Total Cases 1-26-2020.csv")[, c(1:5)]
-dat6 <- read.csv(file = "data/JHUCSSE Total Cases 1-27-2020.csv")[, c(1:5)]
-dat7 <- read.csv(file = "data/JHUCSSE Total Cases 1-28-2020.csv")[, c(1:5)]
+dat1 <- read.csv(file = "../data/JHUCSSE Total Cases 1-22-2020.csv")[, c(1:4)]
+dat2 <- read.csv(file = "../data/JHUCSSE Total Cases 1-23-2020.csv")[, c(1:4, 7)]
+dat3 <- read.csv(file = "../data/JHUCSSE Total Cases 1-24-2020.csv")[, c(1:4, 7)]
+dat4 <- read.csv(file = "../data/JHUCSSE Total Cases 1-25-2020.csv")[, c(1:4, 7)]
+dat5 <- read.csv(file = "../data/JHUCSSE Total Cases 1-26-2020.csv")[, c(1:5)]
+dat6 <- read.csv(file = "../data/JHUCSSE Total Cases 1-27-2020.csv")[, c(1:5)]
+dat7 <- read.csv(file = "../data/JHUCSSE Total Cases 1-28-2020.csv")[, c(1:5)]
 
 dat1$deaths <- 0
 
