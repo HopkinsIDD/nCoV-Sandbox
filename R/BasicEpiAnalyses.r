@@ -99,3 +99,71 @@ OR_table_age <- function(data, combine_CIs=TRUE) {
   return(age_odds)
   
 }
+
+
+##' 
+##' Function to extract approximate epidemic curves
+##' from the cumulative case data. 
+##' 
+##' @param cum_data a data frame with cumulative case data in oit
+##' @param first_date the first date to infer
+##' @param second_date the last date to infer...shold be iwthin data range
+##' 
+##' 
+##' @return a data frame with roughly estimated incidence in it
+##' 
+est_daily_incidence <- function (cum_data, 
+                                 first_date,
+                                 last_date) {
+  analyze <-   cum_data %>% drop_na(Confirmed)
+  
+  ##Get the implied daily incidence for each province
+  ##by fitting a monitonically increasing spline and then 
+  ##taking the difference (a little less sensitive to 
+  ##perturbations in reporting than taking raw difference).
+  ##Making sure only to infer over trhe suport
+  tmp_dt_seq <- seq(first_date, last_date, "days")
+  incidence_data<- analyze %>% nest(-Province_State) %>%
+    mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Confirmed,
+                                   method="hyman"))) %>%
+    mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)], 
+                                               Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
+    unnest(Incidence) %>% select(-data) %>% select(-cs) 
+  
+  return(incidence_data)
+  
+}
+
+
+##' 
+##' Function to extract approximate epidemic curves
+##' from the cumulative case data. 
+##' 
+##' @param cum_data a data frame with cumulative case data in oit
+##' @param first_date the first date to infer
+##' @param second_date the last date to infer...shold be iwthin data range
+##' 
+##' 
+##' @return a data frame with roughly estimated incidence in it
+##' 
+est_daily_deaths <- function (cum_data, 
+                                 first_date,
+                                 last_date) {
+  analyze <-   cum_data %>% drop_na(Deaths)
+  
+  ##Get the implied daily incidence for each province
+  ##by fitting a monitonically increasing spline and then 
+  ##taking the difference (a little less sensitive to 
+  ##perturbations in reporting than taking raw difference).
+  ##Making sure only to infer over trhe suport
+  tmp_dt_seq <- seq(first_date, last_date, "days")
+  death_data<- analyze %>% nest(-Province_State) %>%
+    mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Deaths,
+                                   method="hyman"))) %>%
+    mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)], 
+                                               Deaths= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
+    unnest(Incidence) %>% select(-data) %>% select(-cs) 
+  
+  return(death_data)
+  
+}
