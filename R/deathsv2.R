@@ -1,7 +1,7 @@
 ### get survival curve
 library(survival)
 library(ggplot2)
-setwd("/Users/jkedwar/Box Sync/Research/epidemics/ncov19/ncov19git/nCoV-Sandbox")
+
 
 
 #' A function to filter
@@ -71,10 +71,7 @@ rdate <- function(x,
   
 }
 
-# olddeaths <- deaths1
-# newdeaths <-   getdeltadeaths(dat2, dat3)
 
-#!!!! DEBUG HERE !!!!
   
 #' A function to simulate deaths occuring in line list
 #' @param olddeaths dataframe with pseudo line list with dates of death up until yesterday
@@ -108,13 +105,13 @@ updatedat <- function(current, bfdat, nowdat, nextdat, pconfirmed = 1){
 }
 
 # process initiatial data as of 1/30
-dat1 <- read.csv(file = "data/JHUCSSE Total Cases 1-22-2020.csv")[, c(1:4)]
-dat2 <- read.csv(file = "data/JHUCSSE Total Cases 1-23-2020.csv")[, c(1:4, 7)]
-dat3 <- read.csv(file = "data/JHUCSSE Total Cases 1-24-2020.csv")[, c(1:4, 7)]
-dat4 <- read.csv(file = "data/JHUCSSE Total Cases 1-25-2020.csv")[, c(1:4, 7)]
-dat5 <- read.csv(file = "data/JHUCSSE Total Cases 1-26-2020.csv")[, c(1:5)]
-dat6 <- read.csv(file = "data/JHUCSSE Total Cases 1-27-2020.csv")[, c(1:5)]
-dat7 <- read.csv(file = "data/JHUCSSE Total Cases 1-28-2020.csv")[, c(1:5)]
+dat1 <- read.csv(file = "../data/JHUCSSE Total Cases 1-22-2020.csv")[, c(1:4)]
+dat2 <- read.csv(file = "../data/JHUCSSE Total Cases 1-23-2020.csv")[, c(1:4, 7)]
+dat3 <- read.csv(file = "../data/JHUCSSE Total Cases 1-24-2020.csv")[, c(1:4, 7)]
+dat4 <- read.csv(file = "../data/JHUCSSE Total Cases 1-25-2020.csv")[, c(1:4, 7)]
+dat5 <- read.csv(file = "../data/JHUCSSE Total Cases 1-26-2020.csv")[, c(1:5)]
+dat6 <- read.csv(file = "../data/JHUCSSE Total Cases 1-27-2020.csv")[, c(1:5)]
+dat7 <- read.csv(file = "../data/JHUCSSE Total Cases 1-28-2020.csv")[, c(1:5)]
 
 dat1$deaths <- 0
 
@@ -137,32 +134,34 @@ dat7 <- lim(dat7)
 pconfirmed <- c(1, 1, 1, 1, 1, 1)
 #pconfirmed <- c(.5, .25, .2, .2, .1, .1)
 
-#start loop here
+#start loop here to repeat process k times
 res <- matrix(nrow = 200, ncol = 1)
 for(i in 1:200){
   #organize first file, which has different vars and slightly different structure than others
   dat1b <- dat1
   dat1b$Date.y <- dat1b$Date
-  dat1b$deltacases <- dat1$Confirmed
+  dat1b$deltacases <- dat1$Confirmed #new cases at timepoint 1
   dat1b$deltacases <- ifelse(is.na(dat1b$deltacases), 0, dat1b$deltacases)
   dat1b <- dat1b[, c(1, 3, 7)]
-  dat1c <- getdeltadeaths(dat1, dat2)
-  dat1ll <- getll(dat1b, pconfirmed = pconfirmed[1])
+  dat1c <- getdeltadeaths(dat1, dat2) #new deaths at timepoint 1
+  dat1ll <- getll(dat1b, pconfirmed = pconfirmed[1]) #create pseudo line list
   #assign random onset date (between 1/1/20 and 1/21/20) to prevalent cases on 1/21 (could alter this to make fewer cases early and more later...)
   dat1ll$onsetDate <- rdate(length(dat1ll$onsetDate), min = '2020-01-01', max = "2020-01-21", sort = FALSE)
   deaths1 <- merge(dat1ll, dat1c, by = c("Province"), all = TRUE)
+  #randomly assign deaths with probability pdeath calculate above
   deaths1$death <- ifelse(deaths1$onsetDate<=deaths1$Date, rbinom(nrow(deaths1), 1, deaths1$pdeath), 0)
+  #assign date of death
   deaths1$deathDate <- ifelse(deaths1$death == 1, deaths1$Date, "NA")
   deaths1 <- deaths1[!is.na(deaths1$onsetDate), c("Province", "onsetDate", "deathDate", "death", "confirmed")]
   
-  # use function to update with new data each day
+  # use function to update pseudo line list with new data each day
   deaths2 <- updatedat(deaths1, dat1, dat2, dat3, pconfirmed = pconfirmed[2])
   deaths3 <- updatedat(deaths2, dat2, dat3, dat4, pconfirmed = pconfirmed[3])
   deaths4 <- updatedat(deaths3, dat3, dat4, dat5, pconfirmed = pconfirmed[4])
   deaths5 <- updatedat(deaths4, dat4, dat5, dat6, pconfirmed = pconfirmed[5])
   deaths6 <- updatedat(deaths5, dat5, dat6, dat7, pconfirmed = pconfirmed[6])
   
-  uptodate <- deaths6 #update when new data become avail
+  uptodate <- deaths6 #update HERE when new data become avail
   
   # turn this on as a check on the number of deaths - right now we seemt to be returning the observed numbers of deaths
   # sum(deaths1$death, na.rm = TRUE)
@@ -172,9 +171,9 @@ for(i in 1:200){
   # sum(deaths5$death, na.rm = TRUE)
   # sum(deaths6$death, na.rm = TRUE)
   
-  uptodate$delta <- ifelse(is.na(uptodate$deathDate), 0, 1)
+  uptodate$delta <- ifelse(is.na(uptodate$deathDate), 0, 1) #recode NAs to 0
   uptodate$deathDate2 <- as.Date(as.numeric(uptodate$deathDate), origin = "1970-01-01")
-  uptodate$t <- uptodate$deathDate2- uptodate$onsetDate #time to death
+  uptodate$t <- uptodate$deathDate2- uptodate$onsetDate #time from onset to death
   uptodate$t <- ifelse(is.na(uptodate$t), Sys.Date() - uptodate$onsetDate, uptodate$t) #administratively censor today
   deathci <- survfit(Surv(t, delta == 1) ~ 1, data = uptodate)
   deathci2 <- data.frame( t = deathci$time, s = deathci$surv)
@@ -184,7 +183,7 @@ for(i in 1:200){
 }
 
 summary(res)
-#how can we calibrate these results to account for the fact that we are using on confirmed (ie most severe) cases?
+
 
 plot(hist(res, breaks = 50))
 
