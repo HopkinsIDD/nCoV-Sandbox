@@ -167,3 +167,40 @@ est_daily_deaths <- function (cum_data,
   return(death_data)
   
 }
+
+
+
+
+##' 
+##' Function to extract approximate epidemic curves
+##' from the cumulative case data. 
+##' 
+##' @param cum_data a data frame with cumulative case data in oit
+##' @param first_date the first date to infer
+##' @param second_date the last date to infer...shold be iwthin data range
+##' 
+##' 
+##' @return a data frame with roughly estimated incidence in it
+##' 
+est_daily_recovered <- function (cum_data, 
+                              first_date,
+                              last_date) {
+  analyze <-   cum_data %>% drop_na(Recovered)
+  
+  ##Get the implied daily incidence for each province
+  ##by fitting a monitonically increasing spline and then 
+  ##taking the difference (a little less sensitive to 
+  ##perturbations in reporting than taking raw difference).
+  ##Making sure only to infer over trhe suport
+  tmp_dt_seq <- seq(first_date, last_date, "days")
+  death_data<- analyze %>% nest(-Province_State) %>%
+    mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Recovered,
+                                   method="hyman"))) %>%
+    mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)], 
+                                               Recovered= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
+    unnest(Incidence) %>% select(-data) %>% select(-cs) 
+  
+  return(death_data)
+  
+}
+

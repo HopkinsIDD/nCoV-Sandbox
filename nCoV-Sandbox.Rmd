@@ -61,64 +61,72 @@ data {
   int <lower=0> L; //the number of locations we have data from
   
   real <lower=0> c[T,L]; //number of confirmed cases reported on each day. A real since might be estimated. 
-  //int <lower=0> r[T,L]; //number of recovered cases reported on each day.
+  int <lower=0> r[T,L]; //number of recovered cases reported on each day.
   int <lower=0> d[T,L]; //number of deaths reported on each day. 
   
 }
 
 parameters {
-  real logit_rho; //the goal of this whole thing
+  real logit_rho; //the gtmp_data <- list(T=Tmax, L=2, c=cases[,1:2], d=deaths[)oal of this whole thing
+
+ real <lower=0> alphaD; //parameter for time to death distribution
+ real <lower=0> betaD; //parameter for time to death distribution
   
-  real <lower=0> alphaD; //parameter for time to death distribution
-  //real <lower=0> betaD; //parameter for time to death distribution
-  
-  //real <lower=0> alphaR; //parameter for time to recovery distribution
-  //real <lower=0> betaR; //parameter for time to recovery distribution
+ real <lower=0> alphaR; //parameter for time to recovery distribution
+ real <lower=0> betaR; //parameter for time to recovery distribution
   
 }
 
 transformed parameters {
   real <lower=0, upper=1> rho; //CFR
-  real <lower=0> expected_deaths[T,L];
-  //real <lower=0> expected_recoveries[T,L];
+  real expected_deaths[T,L];
+  real <lower=0> expected_recoveries[T,L];
   
   rho = inv_logit(logit_rho);
   
-  //this can be made more efficient...but for now./
+ 
+ //this can be made more efficient...but for now./
   for (j in 1:L) {
     for (t in 1:T) {
-      expected_deaths[t,j] = 0;
+      expected_deaths[t,j]=0.0001;
         for (k in 1:t) {
-          expected_deaths[t,j] += c[k,j] * rho * 
-              (exponential_cdf(t-k+1,alphaD)-
-                  exponential_cdf(t-k,alphaD));
+          expected_deaths[t,j] += 
+            c[k,j] * rho *
+              (gamma_cdf(t-k+1,alphaD, betaD)-
+                  gamma_cdf(t+-k,alphaD, betaD));
         }
-        //print(t);
-        //print(j);
-        //print(expected_deaths[t,j]);
-        //print(rho);
-        //print(d[t,j]);
-        //print("--")
+        
+        
     }
   }
   
+   for (j in 1:L) {
+    for (t in 1:T) {
+      expected_recoveries[t,j]=0.0001;
+        for (k in 1:t) {
+          expected_recoveries[t,j] += 
+            c[k,j] * rho *
+              (gamma_cdf(t-k+1,alphaR, betaR)-
+                  gamma_cdf(t+-k,alphaR, betaR));
+        }
+        
+        
+    }
+  }
   
- 
-    
 }
 
 
 model {
- 
-  
+
   //definitely can be made more effcient.
   for (j in 1:L) {
     for (t in 1:T) {
       target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]);
-      
+      target+=poisson_lpmf(r[t,j]|expected_recoveries[t,j]);
     }
   }
-  print(target());
+  //print(target());
 }
 
 ```
@@ -206,15 +214,56 @@ Prep data.
   
   deaths<- round(deaths)
   
+  #Recoveries
+  recovered_data <- est_daily_recovered(jhucsse_china,
+                                  ISOdate(2019,12,1),
+                                  ISOdate(2020,1,30))
+  
+  
+  #look at this before we do it.
+  recovered_plt <- recovered_data%>%filter(Date>"2020-1-1") %>% 
+    ggplot(aes(x=Date,  y=Recovered, fill=Province_State)) +
+    geom_bar(stat="identity", position="stack") +
+    theme_bw()+theme(legend.position="bottom")
+  
+
+  recovered_plt
+
+
+  recovered_data<-
+    recovered_data%>%filter(Date>"2020-1-1") %>% 
+    drop_na(Recovered)
+  
+  
+  #Add columns with indices for time and location
+  recovered_data$loc <-
+    as.numeric(as.numeric(recovered_data$Province_State))
+  recovered_data$t <- as.numeric(as.Date(recovered_data$Date))-
+    min(as.numeric(as.Date(recovered_data$Date))) + 1
+  
+  
+  recovereds <- matrix(0,nrow=Tmax, ncol=L)
+  
+  for (i in 1:nrow(recovered_data)) {
+    recovereds[recovered_data$t[i], recovered_data$loc[i]] <-
+      recovered_data$Recovered[i]
+  }
+  
+  recovereds<- round(recovereds)
+  
+  
   ##we now have everything to run our stand model
   cfrmdl_data <- list(T=Tmax, L=L,
                       c=cases,
-                      d=deaths)
+                      d=deaths,
+                      r=recovereds)
+  
+  
 ```
 
 ```{r, eval=FALSE}
   cfrmdl_res <- sampling(cfrmdl, data=cfrmdl_data,
-                         iter=200)
+                         iter=500)
 
 ```
 
