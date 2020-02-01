@@ -7,7 +7,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/jkedwar/Box Sync/Research/epidemics/ncov19/ncov19git/nCov-Sandbox") 
+
  
 require(knitr)
 require(tidyverse)
@@ -17,9 +17,9 @@ require(rstan)
 #source("R/DataLoadUtils.r")
 #source("R/BasicEpiAnalyses.r")
 
-source("/Users/jkedwar/Box Sync/Research/epidemics/ncov19/ncov19git/nCov-Sandbox/R/DataLoadUtils.r")
-source("/Users/jkedwar/Box Sync/Research/epidemics/ncov19/ncov19git/nCov-Sandbox/R/BasicEpiAnalyses.r")
-#source("/Users/jkedwar/Box Sync/Research/epidemics/ncov19/BasicEpiAnalyses_jke.r")
+source("R/DataLoadUtils.r")
+source("R/BasicEpiAnalyses.r")
+
 ```
 
 
@@ -43,7 +43,7 @@ $$E(n_{jv}) = c_{jv} - \sum_{k=0}^{v-1} n_{jk}\lambda$$
 where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered). 
 
 
-Finally $$\rho = \int_0^\infty \lambda_1[1 - G(t)]dt$$.
+Finally $$\rho = \int_0^\infty \hat{\lambda_1}[1 - \hat{G}(t)]dt$$.
 
 First, define the stan model.
 
@@ -257,7 +257,7 @@ library(tidyverse)
 ```
 
 ```{r, eval = FALSE}
-  cfrmdl_res <- sampling(cfrmdl, data=cfrmdl_data,
+  cfrmdl_resslac <- sampling(cfrmdl, data=cfrmdl_data,
                          iter=10000, init=1)
   chains <- extract(cfrmdl_res)
   lambda1 <- chains$lambda1
