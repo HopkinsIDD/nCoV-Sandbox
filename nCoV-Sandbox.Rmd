@@ -263,7 +263,7 @@ Prep data.
 
 ```{r, eval=FALSE}
   cfrmdl_res <- sampling(cfrmdl, data=cfrmdl_data,
-                         iter=500)
+                         iter=50)
 
 ```
 
