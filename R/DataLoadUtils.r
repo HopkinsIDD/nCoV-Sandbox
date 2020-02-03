@@ -63,6 +63,10 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
     } else {
       tmp <- rename(tmp, Country_Region=`Country/Region`)
     }
+    
+    if ("Demised"%in% colnames(tmp)) {
+      tmp <- rename(tmp, Deaths=Demised)
+    }
 
     rc <-bind_rows(rc,tmp)
   }
@@ -83,7 +87,10 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
   return(rc)
 }
 
-##' grabs linelist from Kudos
+##' NOTE: BASE PRIMARY ANLAYSIS ON SAVED CSVs SO THEY ARE TIED
+##' TO PARTICULAR DATE
+##' 
+##'   grabs linelist from Kudos
 ##' and saves as csv if we want
 ##' NOTE: need to test with with the loading functions..
 ##' @param auto_save_csv
@@ -114,4 +121,26 @@ read_kudos_direct <- function(auto_save_csv=TRUE){
     }
 
     return(ll_sheet)
+}
+
+
+
+##' Function to load the MK line lists based on the google sheet
+##' publically maintained my Moritz Kraemer at:
+##' https://docs.google.com/spreadsheets/d/1itaohdPiAeniCXNlntNztZ_oRvjh0HsGuJXUJWET008/edit
+##' 
+##' @param date the date string for the line list we want to laod. Will be
+##'   used to lod the Hubei and not Hubei files. Must be exatly as used in the 
+##'   filename
+##'   
+##' 
+##' @return a combined data frame with all of the line list data
+##' 
+read_MK_linelist <- function(date) {
+  hubei_name <- sprintf("data/MK Line List Hubei %s.csv", date)
+  non_hubei_name <- sprintf("data/MK Line List not Hubei %s.csv",date)
+  
+  hubei <- read_csv(hubei_name)
+  non_hubei <- read_csv(non_hubei_name)
+  
 }
