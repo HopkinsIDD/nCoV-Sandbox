@@ -188,9 +188,9 @@ est_daily_recovered <- function (cum_data,
                               last_date,
                               na_to_zeros=FALSE) {
     if (na_to_zeros) {
-        analyze <-   cum_data %>% drop_na(Recovered)
-    } else {
         analyze <-   cum_data %>% replace(is.na(.), 0)
+    } else {
+        analyze <-   cum_data %>% drop_na(Recovered)
     }
 
   ##Get the implied daily incidence for each province
@@ -199,14 +199,14 @@ est_daily_recovered <- function (cum_data,
   ##perturbations in reporting than taking raw difference).
   ##Making sure only to infer over trhe suport
   tmp_dt_seq <- seq(first_date, last_date, "days")
-  death_data<- analyze %>% nest(-Province_State) %>%
+  recovered_data<- analyze %>% nest(-Province_State) %>%
     mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Recovered,
                                    method="hyman"))) %>%
     mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)],
                                                Recovered= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
     unnest(Incidence) %>% select(-data) %>% select(-cs)
 
-  return(death_data)
+  return(recovered_data)
 
 }
 

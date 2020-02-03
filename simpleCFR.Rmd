@@ -205,6 +205,14 @@ library(tidyverse)
   }
   
   
+   recov_plt <- recov_data%>%filter(Date>"2020-1-1") %>% 
+    ggplot(aes(x=Date,   y=Recovered, fill=Province_State)) +
+    geom_bar(stat="identity", position="stack") +
+    theme_bw()+theme(legend.position="bottom")
+  
+
+  recov_plt
+  
   
    death_data <- est_daily_deaths(jhucsse_china,
                                   ISOdate(2019,12,1),
@@ -259,7 +267,7 @@ library(tidyverse)
 
 ```{r, eval = FALSE}
   cfrmdl_je_res <- sampling(cfrmdl_je, data=cfrmdl_je_data,
-                         iter=2000, init=1)
+                         iter=5000, init=1)
   chains <- extract(cfrmdl_je_res)
   lambda1 <- chains$lambda1
   lambda <- chains$lambda

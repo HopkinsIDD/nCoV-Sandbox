@@ -64,11 +64,13 @@ data {
   int <lower=0> r[T,L]; //number of recovered cases reported on each day.
   int <lower=0> d[T,L]; //number of deaths reported on each day. 
   
+ 
+
 }
 
 parameters {
-  real logit_rho; //the gtmp_data <- list(T=Tmax, L=2, c=cases[,1:2], d=deaths[)oal of this whole thing
-
+ real logit_rho; //the goal of this whole thing
+ 
  real <lower=0> alphaD; //parameter for time to death distribution
  real <lower=0> betaD; //parameter for time to death distribution
   
@@ -119,6 +121,8 @@ transformed parameters {
 
 model {
 
+  logit_rho ~ normal(-2,1);
+
   //definitely can be made more effcient.
   for (j in 1:L) {
     for (t in 1:T) {
@@ -147,9 +151,9 @@ Prep data.
   
   
   incidence_data <- est_daily_incidence(jhucsse_china,
-                                        ISOdate(2019,12,1),
-                                        ISOdate(2020,1,30))
-  
+                                  ISOdate(2019,12,1),
+                                  ISOdate(2020,1,30))
+         
    #look at this before we do it.
   inc_plt <- incidence_data%>%filter(Date>"2020-1-1") %>% 
     ggplot(aes(x=Date,  y=Incidence, fill=Province_State)) +
@@ -263,7 +267,7 @@ Prep data.
 
 ```{r, eval=FALSE}
   cfrmdl_res <- sampling(cfrmdl, data=cfrmdl_data,
-                         iter=50)
+                         iter=200)
 
 ```
 
