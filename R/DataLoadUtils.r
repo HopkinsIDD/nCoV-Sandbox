@@ -8,27 +8,26 @@
 readKudos2 <- function (filename) {
   require(tidyverse)
   rc <- read_csv(filename, col_types =
-                   cols(date=col_date("%m/%d/%Y"),
-                        gender=col_factor(),
-                        symptom_onset = col_date("%m/%d/%Y")))
-
+                               cols(date=col_date("%m/%d/%Y"),
+                                    gender=col_factor(),
+                                    symptom_onset = col_date("%m/%d/%Y")))
 
   return(rc)
 }
 
 ##' Same as above but for older Kudos file layout.
 readKudos <- function (filename) {
-  require(tidyverse)
-  rc <- read_csv(filename, col_types =
-                   cols(Date=col_date("%m/%d/%Y"),
-                        Gender=col_factor(),
-                        `Symptom onset (approximate)` = col_date("%m/%d/%Y")))
+    require(tidyverse)
+    rc <- read_csv(filename, col_types =
+                                 cols(Date=col_date("%m/%d/%Y"),
+                                      Gender=col_factor(),
+                                      `Symptom onset (approximate)` = col_date("%m/%d/%Y")))
 
-  #extract death data
-  rc <- mutate(rc, dead=str_detect(Summary,"death")) %>%
-    rename(onset=`Symptom onset (approximate)`)
+                                        #extract death data
+    rc <- mutate(rc, dead=str_detect(Summary,"death")) %>%
+        rename(onset=`Symptom onset (approximate)`)
 
-  return(rc)
+    return(rc)
 }
 
 ##'
@@ -91,17 +90,19 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
 read_kudos_direct <- function(auto_save_csv=TRUE){
     library(googlesheets4)
     library(readr)
+    library(lubridate)
     ## note this will break if sheet name changes or structure changes
     ll_sheet <- read_sheet("https://docs.google.com/spreadsheets/d/1jS24DjSPVWa4iuxuD4OAXrE3QeI8c9BC1hSlqr-NMiU/edit#gid=1187587451",
-                           sheet="Line-list",skip=1,na="NA")
+                           sheet="Line-list",skip=1,na="NA") %>%
+        mutate(`reporting date` = as_date(`reporting date`))
 
     ## some fields are coming out as a list. Probably a better way to manage but...
     ll_sheet[,"age"] <- Reduce("c",ll_sheet$age) %>% as.numeric
-    ll_sheet[,"symptom_onset"] <- Reduce("c",ll_sheet$symptom_onset)
+    ll_sheet[,"symptom_onset"] <- Reduce("c",ll_sheet$symptom_onset) %>% as_date
     ll_sheet[,"If_onset_approximated"] <- Reduce("c",ll_sheet$If_onset_approximated)
-    ll_sheet[,"hosp_visit_date"] <- Reduce("c",ll_sheet$hosp_visit_date)
-    ll_sheet[,"exposure_start"] <- Reduce("c",ll_sheet$exposure_start)
-    ll_sheet[,"exposure_end"] <- Reduce("c",ll_sheet$exposure_end)
+    ll_sheet[,"hosp_visit_date"] <- Reduce("c",ll_sheet$hosp_visit_date) %>% as_date
+    ll_sheet[,"exposure_start"] <- Reduce("c",ll_sheet$exposure_start) %>% as_date
+    ll_sheet[,"exposure_end"] <- Reduce("c",ll_sheet$exposure_end) %>% as_date
     ll_sheet[,"from Wuhan"] <- Reduce("c",ll_sheet$`from Wuhan`)
 
 
