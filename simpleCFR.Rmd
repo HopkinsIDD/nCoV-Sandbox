@@ -99,7 +99,7 @@ transformed parameters {
          expected_deaths[t,j] += n[k,j] * lambda1;
          expected_exit[k,j] += n[k,j] * lambda;
        }
-       expected_riskset[t,j] = c[t,j] - expected_exit[t,j];
+       expected_riskset[t,j] = c[t,j] - expected_exit[t,j] + 0.0001;
         //expected_recovered[t,j] = (expected_exit[t,j] - expected_deaths[t,j]);
 
    }
@@ -313,14 +313,14 @@ library(tidyverse)
 
   totdeaths<- round(totdeaths)
   recovered <- round(recovered)
-  confirmeds[confirmeds == 0] <- 0.001
+  confirmeds[confirmeds == 0] <- 0.0001
   #recovered[recovered == 0] <- 0.0001
-  infected[infected == 0] <- 0.001
+  infected[infected == 0] <- 0.0001
  
 
 
   ##we now have everything to run our stand model 
-  cfrmdl_je_data <- list(T=Tmax, L=L,
+  cfrmdl_je_data1 <- list(T=Tmax, L=L,
                       c = confirmeds,
                       d = totdeaths,
                       r = recovered,
@@ -331,7 +331,7 @@ library(tidyverse)
   
 ####NOT SURE HOW TO RESOLVE THIS #######
   ##we now have everything to run our stand model 2
-  cfrmdl_je_data <- list(T=Tmax, L=L,
+  cfrmdl_je_data2 <- list(T=Tmax, L=L,
                       c = confirmeds,
                       d = deaths,
                       r = recovered,
@@ -345,7 +345,7 @@ library(tidyverse)
 
 
 ```{r, eval = FALSE}
-  cfrmdl_je_res <- sampling(cfrmdl_je, data=cfrmdl_je_data,
+  cfrmdl_je_res <- sampling(cfrmdl_je, data=cfrmdl_je_data1,
                          iter=5000, init=1)
   chains <- extract(cfrmdl_je_res)
   lambda1 <- chains$lambda1
