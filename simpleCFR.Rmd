@@ -7,19 +7,17 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-#knitr::opts_knit$set(root.dir = "/Users/jkedwar/Box Sync/Research/epidemics/ncov19/ncov19git/nCov-Sandbox") 
+
  
 require(knitr)
 require(tidyverse)
 require(gridExtra)
 require(rstan)
 
+
 source("R/DataLoadUtils.r")
 source("R/BasicEpiAnalyses.r")
 
-#source("/Users/jkedwar/Box Sync/Research/epidemics/ncov19/ncov19git/nCov-Sandbox/R/DataLoadUtils.r")
-#source("/Users/jkedwar/Box Sync/Research/epidemics/ncov19/ncov19git/nCov-Sandbox/R/BasicEpiAnalyses.r")
-#source("/Users/jkedwar/Box Sync/Research/epidemics/ncov19/BasicEpiAnalyses_jke.r")
 ```
 
 
@@ -32,6 +30,7 @@ Moreover, the time from confirmation to death or recovery (composite outcome) fo
 $$\Pr(T_i<t) = G(t; \lambda)$$
 Where $T_i$ is the time from confirmation to  death or recovery for person $i$.
 
+To ease application of the above models to our dataset, which is organized by calendar date, we will first assume both time to death and time to the composite outcome follow an exponential distirbution with a constant hazard function, $\lambda_1$ and $\lambda$, respectively, for now.
 
 Let $d_{jv}$ be the number of reported deaths in location $j$ and calendar date $v$. Based on the 
 above:
@@ -43,9 +42,29 @@ $$E(n_{jv}) = c_{jv} - \sum_{k=0}^{v-1} n_{jk}\lambda$$
 where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered). 
 
 
-Finally $$\rho = \int_0^\infty \lambda_1[1 - G(t)]dt$$.
 
+Finally $$\rho = \int_0^\infty \hat{\lambda_1}[1 - \hat{G}(t)]dt = \int_0^\infty \hat{\lambda_1}e^{-\hat{\lambda}t}dt$$.
+
+Now, let's assume the hazard of death and recovery is not constant over time. Assume time to death and time to the composite endpoint both follow Weibull distributions, such that $$\Pr(Y_i<t) = F(t; \lambda_1, \alpha_1) = 1 - \textrm{exp}(-(\lambda_1 t)^{\alpha_1})$$ and $$\Pr(T_i<t) = G(t; \lambda, \alpha)=1 - \textrm{exp}(-(\lambda t)^\alpha)$$
+
+Let $d_{jv}$ be the number of reported deaths in location $j$ and calendar date $v$. Based on the 
+above:
+$$E(d_{jv}) = \sum_{k=0}^v \{n_{jk}  \sum_{h=1}^{max(T)} \alpha_1 \lambda_1 h^{\alpha_1 - 1}P(h|v)\}$$
+where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered), $h$ indexes the unique values of time from symptom onset to death or recovery.
+
+In addition, 
+$$E(n_{jv}) = c_{jv} - \sum_{k=0}^{v-1} \{n_{jk}\sum_{h=1}^{max(T)} \alpha \lambda h^{\alpha - 1}P(h|v)\}\}$$
+where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered). 
+
+But unclear how to estimate $P(h|v)$.
+
+
+Finally $$\rho = \int_0^\infty \hat{\lambda}_1\hat{\alpha}_1 t^{\hat{\alpha}_1-1}[1 - \hat{G}(t)]dt $$ 
+
+
+ <!-- = \int_0^\infty \hat{\lambda}_1\hat{\alpha}_1 t^{\hat{\alpha}_1-1}e^{-(\hat{\lambda}t)^\hat{\alpha}}dt$$.  -->
 First, define the stan model.
+
 
 ```{stan, eval = FALSE, output.var="cfrmdl_je"}
 
@@ -54,7 +73,6 @@ data {
   int <lower=0> L; //the number of locations we have data from
   
   real <lower=0> c[T,L]; // cumulative number of confirmed cases reported on each day. 
-  real <lower=0> r[T,L]; // cumulative number of recovered cases reported on each day.
   int <lower=0> d[T,L]; // cumulative number of deaths reported on each day. 
   int <lower=0> n[T,L]; //number of currently infected people on each day. 
   int <lower = 0> V; // max infection duration (we should b e able to get rid of this)
@@ -68,23 +86,23 @@ parameters {
 
 transformed parameters {
   real <lower=0> expected_deaths[T,L]; // cumulative # deaths BY time T
-  real <lower=0> expected_riskset[T,L]; // # infected at time T
   real <lower=0> expected_exit[T,L]; // cumulative # those who have exited due to death or recovery BY T
+  real <lower=0> expected_riskset[T,L]; // # infected at time T
 
   
   //this can be made more efficient...but for now./
   for (j in 1:L) {
     for (t in 1:T) {
-      expected_deaths[t,j] = 0.0001;
       expected_exit[t,j] = 0.0001;
+      expected_deaths[t,j] = 0.0001;
         for (k in 1:t) {
-        expected_exit[k,j] += n[k,j] * lambda;
-        expected_deaths[k,j] += n[k,j] * lambda1;
-        }
-        expected_riskset[t,j] = c[t,j] - expected_exit[t,j];
+         expected_deaths[t,j] += n[k,j] * lambda1;
+         expected_exit[k,j] += n[k,j] * lambda;
+       }
+       expected_riskset[t,j] = c[t,j] - expected_exit[t,j];
         //expected_recovered[t,j] = (expected_exit[t,j] - expected_deaths[t,j]);
 
-    }
+   }
   }
 }
 
@@ -94,27 +112,62 @@ model {
   //definitely can be made more effcient.
   for (j in 1:L) {
     for (t in 1:T) {
-      //target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(n[t,j]|expected_riskset[t,j]);
+
       target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(n[t,j]|expected_riskset[t,j]);
     }
   }
   // print(target());
 }
 
-//generated quantities {
-//real  <lower = 0, upper = 1> rho;
-// for (v in 1:V){
- //   rho += exp(loglambda1) * exp(-exp(loglambda) * v);
-//    rho += lambda1 * exp(-lambda * v);
-   
-// }
-//print(rho);
-  //rho = integrate_1d(getft, 0, positive_infinity(), {lambda1, lambda}, t);
 
-//} // The posterior predictive distribution"
 
 ```
-Prep data. 
+
+```{stan, eval = FALSE, output.var="cfrmdl2"}
+
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> n[T,L]; //number of currently infected people on each day. 
+}
+
+parameters {
+  real <lower=0> lambda1; //parameter for time to death distribution
+  real <lower=0> lambda; // parameter for time to death or recovery distribution
+  
+}
+
+transformed parameters {
+  real <lower=0> expected_deaths[T,L]; //  # deaths BY time T
+  real <lower=0> expected_r[T,L]; //  # those who have exited due to recovery BY T
+
+
+ for (j in 1:L) {
+    for (t in 1:T) {
+      expected_deaths[t,j] = n[t,j] * lambda1 + 0.00000001 ;
+      expected_r[t,j] = n[t,j] * (lambda - lambda1) + 0.00000001;
+      
+
+    }
+  }
+}
+
+model {
+  //definitely can be made more effcient.
+  for (j in 1:L) {
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_r[t,j]);
+    }
+  }
+}
+
+```
+
+
+
+Prep data and run model. 
 
 ```{r message=FALSE, warning=FALSE, include=FALSE}
 library(readr)
@@ -154,19 +207,15 @@ library(tidyverse)
   incidence_data$t <- as.numeric(as.Date(incidence_data$Date))-
     min(as.numeric(as.Date(incidence_data$Date))) + 1
   
+  
+  ######### I DON'T UNDERSTAND WHAT WE ARE DOING HERE SINCE
+  ######### RAW DATA WAS CUMLATIVE AND WE TIED TO BACK OUT
+  ######### INCIDENE.....
   confirmed_data <- incidence_data
   confirmed_data$confirmeds <-ave(confirmed_data$Incidence, confirmed_data$loc, FUN=cumsum)
   
-  # confirmed_data<-
-  #   confirmed_data%>%filter(Date>"2020-1-1")
-  # 
-  # #Add columns with indices for time and location
-  # confirmed_data$loc <-
-  #   as.numeric(confirmed_data$Province_State)
-  # confirmed_data$t <- as.numeric(as.Date(confirmed_data$Date))-
-  #   min(as.numeric(as.Date(confirmed_data$Date))) + 1
-  # 
-  # 
+  
+  
   
   Tmax <- max(incidence_data$t)
   L <- max(incidence_data$loc)
@@ -187,6 +236,15 @@ library(tidyverse)
                                     ISOdate(2019,12,1),
                                     ISOdate(2020,1,30),
                                     na_to_zeros = TRUE)
+
+   recov_plt <- recov_data%>%filter(Date>"2020-1-1") %>% 
+    ggplot(aes(x=Date,   y=Recovered, fill=Province_State)) +
+    geom_bar(stat="identity", position="stack") +
+    theme_bw()+theme(legend.position="bottom")
+  
+
+  recov_plt
+  
    recov_data<-
     recov_data%>%filter(Date>"2020-1-1")
   
@@ -195,23 +253,18 @@ library(tidyverse)
     as.numeric(recov_data$Province_State)
   recov_data$t <- as.numeric(as.Date(recov_data$Date))-
     min(as.numeric(as.Date(recov_data$Date))) + 1
+
   
-  recov_data$totrecovered <-ave(recov_data$Recovered, recov_data$loc, FUN=cumsum)
+ 
+  #recov_data$totrecovered <-ave(recov_data$Recovered, recov_data$loc, FUN=cumsum)
   
   recovered <- matrix(0,nrow=Tmax, ncol=L)
     for (i in 1:nrow(recov_data)) {
     recovered[recov_data$t[i], recov_data$loc[i]] <-
-        recov_data$totrecovered[i]
+
+        recov_data$Recovered[i]
   }
   
-  
-   recov_plt <- recov_data%>%filter(Date>"2020-1-1") %>% 
-    ggplot(aes(x=Date,   y=Recovered, fill=Province_State)) +
-    geom_bar(stat="identity", position="stack") +
-    theme_bw()+theme(legend.position="bottom")
-  
-
-  recov_plt
   
   
    death_data <- est_daily_deaths(jhucsse_china,
@@ -246,24 +299,50 @@ library(tidyverse)
     deaths[death_data$t[i], death_data$loc[i]] <-
       death_data$Deaths[i]
   }
-  
+ 
   deaths<- round(deaths)
   
-  infected <- confirmeds - (deaths + recovered)
+
+  totdeaths <-apply(deaths, 2, cumsum)
+  totrecov <-apply(recovered, 2, cumsum)
+  infected <- confirmeds - (totdeaths + totrecov)
+  exit = round(deaths + recovered)
+  cumexit <- totdeaths + totrecov
   infected[infected<0] <- 0
   infected <- round(infected)
-  #recovered <- round(recovered)
+
+  totdeaths<- round(totdeaths)
+  recovered <- round(recovered)
   confirmeds[confirmeds == 0] <- 0.001
+  #recovered[recovered == 0] <- 0.0001
+  infected[infected == 0] <- 0.001
+ 
+
+
+  ##we now have everything to run our stand model 
+  cfrmdl_je_data <- list(T=Tmax, L=L,
+                      c = confirmeds,
+                      d = totdeaths,
+                      r = recovered,
+                      e = cumexit,
+                      n = round(infected),
+                      V = 100)
+
   
-  ##we now have everything to run our stand model
+####NOT SURE HOW TO RESOLVE THIS #######
+  ##we now have everything to run our stand model 2
   cfrmdl_je_data <- list(T=Tmax, L=L,
                       c = confirmeds,
                       d = deaths,
-                      r = recovered, 
+                      r = recovered,
+                      e = exit,
                       n = infected,
                       V = 100)
-
+#### END UNRESOLVED BLOCK #####
+  
+  
 ```
+
 
 ```{r, eval = FALSE}
   cfrmdl_je_res <- sampling(cfrmdl_je, data=cfrmdl_je_data,
@@ -272,14 +351,16 @@ library(tidyverse)
   lambda1 <- chains$lambda1
   lambda <- chains$lambda
   outdat <- data.frame(lambda1 = lambda1, lambda = lambda)
-  save(outdat, file = "outdat.RData")
+
+  save(outdat, file = "data/outdat.RData")
 
 ```
 
 Summarize
 
-```{r load chains}
-load("outdat.RData")
+
+```{r, echo = FALSE }
+load("data/outdat.RData")
 
 lambda1 <- outdat[,1] #chains$lambda1
 lambda <- outdat[,2] #chains$lambda
@@ -290,9 +371,17 @@ lines(density(lambda))
 plot(lambda, type = "l")
 plot(lambda1, type = "l")
 
+
+
+```
+
+Results
+```{r}
+
 #move this into stan model later
 rho <- matrix(nrow = length(lambda1))
 for(i in 1:length(lambda1)){
+
   try (
     rho[i] <- integrate(function(x) {lambda1[i]*exp(-lambda[i]*x)}, 
                         lower = 0, upper = Inf)$value)
@@ -300,8 +389,10 @@ for(i in 1:length(lambda1)){
 rho <- rho[!is.na(rho)]
 median(rho)
 quantile(rho, probs = c(.025, .975))
-
-
+#mean(lambda)
+plot(density(rho))
+plot(log(rho), type = "l")
+max(rho)
 
 
 ```
