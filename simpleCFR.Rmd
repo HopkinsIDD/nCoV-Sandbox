@@ -131,6 +131,7 @@ data {
   int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
   int <lower=0> d[T,L]; //  number of deaths reported on each day. 
   real <lower=0> n[T,L]; //number of currently infected people on each day. 
+  real <lower= 0, upper=1> dr[T,L]; // prrobability of detectinga recovery.
 }
 
 parameters {
@@ -140,15 +141,80 @@ parameters {
 }
 
 transformed parameters {
-  real <lower=0> expected_deaths[T,L]; //  # deaths BY time T
-  real <lower=0> expected_r[T,L]; //  # those who have exited due to recovery BY T
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+  real <lower=0> expected_r[T,L]; //  # those who have exited due to recovery at T
 
 
  for (j in 1:L) {
     for (t in 1:T) {
-      expected_deaths[t,j] = n[t,j] * lambda1 + 0.00000001 ;
-      expected_r[t,j] = n[t,j] * (lambda - lambda1) + 0.00000001;
+      expected_deaths[t,j] = n[t,j] * lambda1 + 0.0001 ;
+      expected_r[t,j] = n[t,j] * (lambda - lambda1) * dr[t,j] + 0.0001;
       
+
+    }
+  }
+
+}
+
+model {
+  //definitely can be made more effcient.
+  for (j in 1:L) {
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_r[t,j]);
+    }
+  }
+ 
+}
+
+```
+
+
+
+Update for time varying hazards
+
+```{stan, eval = FALSE, output.var="cfrmdl3"}
+
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> n[T,L]; //number of currently infected people on each day. 
+  //int <lower=0> e[T,L]; //number of confirmed infections (total) on each day. 
+  real <lower = 0, upper = 1> p[L, T, 33]; //matrix of probabilities of having each inf dur (33 = max)
+}
+
+parameters {
+ 
+  real <lower = 0> lambda1;
+  real <lower = 0> lambda;
+  real <lower = -2, upper = 2> alpha1;
+  real <lower = -2, upper = 2> alpha;
+ 
+  
+}
+
+transformed parameters {
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+  real <lower=0> expected_r[T,L]; //  # those who have exited due to recovery at T
+ // real <lower=0> expected_exits[T,L];
+  //real <lower=0> h1; //parameter for time to death distribution
+ // real <lower=0> h; // parameter for time to death or recovery distribution
+  
+ for (j in 1:L) {
+    for (t in 1:T) {
+    expected_deaths[t,j] = 0.0001;
+    expected_r[t, j] = 0.0001;
+      for (k in 1:33){
+        expected_deaths[k,j] += n[t,j] * p[j,t,k]*alpha1*lambda1*k^(alpha1-1) ;
+        expected_r[k,j] += n[t,j] * ( p[j,t,k]*alpha*lambda*k^(alpha-1) - p[j,t,k]*alpha1*lambda1*k^(alpha1-1));
+      
+      //  h1 += p[j,t,k]*alpha1*lambda1*k^(alpha1-1); //assuming weibull
+      //  h += p[j,t,k]*alpha*lambda*k^(alpha-1);
+      }
+     
+     // expected_exits[t,j] = expected_deaths[t,j]+expected_r[t,j];
+
 
     }
   }
@@ -161,6 +227,9 @@ model {
       target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_r[t,j]);
     }
   }
+              print(lambda1);
+            print(alpha1);
+            print(expected_deaths[T,L]);
 }
 
 ```
@@ -173,7 +242,8 @@ Prep data and run model.
 library(readr)
 library(tidyverse)
    #Load in the JHU CSSE Data
-   jhucsse <- read_JHUCSSE_cases("2020-01-30 23:59", 
+  date <- ISOdate(2020,2,3)
+   jhucsse <- read_JHUCSSE_cases("2020-02-04 1:43", 
                                  append_wiki = TRUE)
   
   ##Continue to filter to China for the moment.
@@ -182,11 +252,11 @@ library(tidyverse)
     filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
   
   jhucsse_china$Province_State <- as.factor(jhucsse_china$Province_State)
-  
+
   
   incidence_data <- est_daily_incidence(jhucsse_china,
                                         ISOdate(2019,12,1),
-                                        ISOdate(2020,1,30))
+                                        date)
   
    #look at this before we do it.
   inc_plt <- incidence_data%>%filter(Date>"2020-1-1") %>% 
@@ -208,14 +278,9 @@ library(tidyverse)
     min(as.numeric(as.Date(incidence_data$Date))) + 1
   
   
-  ######### I DON'T UNDERSTAND WHAT WE ARE DOING HERE SINCE
-  ######### RAW DATA WAS CUMLATIVE AND WE TIED TO BACK OUT
-  ######### INCIDENE.....
+ 
   confirmed_data <- incidence_data
   confirmed_data$confirmeds <-ave(confirmed_data$Incidence, confirmed_data$loc, FUN=cumsum)
-  
-  
-  
   
   Tmax <- max(incidence_data$t)
   L <- max(incidence_data$loc)
@@ -234,7 +299,7 @@ library(tidyverse)
 
   recov_data <- est_daily_recovered(jhucsse_china,
                                     ISOdate(2019,12,1),
-                                    ISOdate(2020,1,30),
+                                   date,
                                     na_to_zeros = TRUE)
 
    recov_plt <- recov_data%>%filter(Date>"2020-1-1") %>% 
@@ -269,7 +334,7 @@ library(tidyverse)
   
    death_data <- est_daily_deaths(jhucsse_china,
                                   ISOdate(2019,12,1),
-                                  ISOdate(2020,1,30))
+                                  date)
    
   #look at this before we do it.
   death_plt <- death_data%>%filter(Date>"2020-1-1") %>% 
@@ -306,47 +371,82 @@ library(tidyverse)
   totdeaths <-apply(deaths, 2, cumsum)
   totrecov <-apply(recovered, 2, cumsum)
   infected <- confirmeds - (totdeaths + totrecov)
-  exit = round(deaths + recovered)
+ 
   cumexit <- totdeaths + totrecov
   infected[infected<0] <- 0
-  infected <- round(infected)
-
-  totdeaths<- round(totdeaths)
-  recovered <- round(recovered)
+  recovered[recovered<0] <- 0
+   exit = round(deaths + recovered)
   confirmeds[confirmeds == 0] <- 0.0001
   #recovered[recovered == 0] <- 0.0001
-  infected[infected == 0] <- 0.0001
+  infected[infected == 0] <- 0.001
  
-
-
-  ##we now have everything to run our stand model 
+    ##we now have everything to run our stan model 
   cfrmdl_je_data1 <- list(T=Tmax, L=L,
                       c = confirmeds,
-                      d = totdeaths,
-                      r = recovered,
+                      d = round(totdeaths),
+                      r = totrecov,
                       e = cumexit,
                       n = round(infected),
                       V = 100)
 
-  
-####NOT SURE HOW TO RESOLVE THIS #######
-  ##we now have everything to run our stand model 2
+ 
+
+  ##we now have everything to run our stan model 2
   cfrmdl_je_data2 <- list(T=Tmax, L=L,
                       c = confirmeds,
-                      d = deaths,
-                      r = recovered,
+                      d = round(deaths),
+                      r = round(recovered),
                       e = exit,
                       n = infected,
                       V = 100)
-#### END UNRESOLVED BLOCK #####
+
   
+
+  
+# Estimate detection rate for recoveries in hubei
+  detectrate <- matrix(1, nrow = nrow(infected), ncol = ncol(infected))
+
+ obscfr <-  totrecov[nrow(totrecov),]/(totdeaths[nrow(totrecov),] + totrecov[nrow(totrecov),])
+ detectrate[, 14] <- obscfr[14]/mean(obscfr[-14], na.rm = TRUE)
+ 
+
+### estimating function for CFR
+ef <- function(h, deaths, recovered, n, detectrate){
+  expected_deaths = n * h[1]
+  expected_obs_recov = (n * h[2]) * (detectrate)
+  ee1 <- (deaths - expected_deaths)^2
+  ee2 <- (recovered - expected_obs_recov)^2
+  ee <- sum(ee1)+sum(ee2)
+  return(sum(ee))
+}
+
+
+fit<-optim(c(rep(.5, 2)), fn=ef, deaths= deaths, recovered = recovered, n = infected, detectrate = detectrate, control=c(maxit=100000))
+bhat<-fit$par
+
+h <- bhat[2] + bhat[1]
+rho <- integrate(function(x) {bhat[1]*exp(-h*x)}, 
+                        lower = 0, upper = Inf)$value
+
+rho
+  
+
+  ##we now have everything to run our stan model 2 (results should match estimating function above)
+  cfrmdl_je_data2 <- list(T=Tmax, L=L,
+                      c = confirmeds,
+                      d = round(deaths),
+                      r = round(recovered),
+                      e = exit,
+                      n = infected,
+                      dr = detectrate,
+                      V = 100)
   
 ```
 
 
 ```{r, eval = FALSE}
-  cfrmdl_je_res <- sampling(cfrmdl_je, data=cfrmdl_je_data1,
-                         iter=5000, init=1)
+  cfrmdl_je_res <- sampling(cfrmdl2, data=cfrmdl_je_data2,
+                         iter=2000, init = 1)
   chains <- extract(cfrmdl_je_res)
   lambda1 <- chains$lambda1
   lambda <- chains$lambda
@@ -397,3 +497,45 @@ max(rho)
 
 ```
 
+Parking lot for time varying hazard stuff
+
+```{r}
+
+# estimate distribution of infection duration on each day
+  # outputs a list of Tx33 matrices (one row per calendar day; 1 column per max possible infection duration)
+# this isn't great because only adds people, doesn't remove them from riskset at death/recovery!
+# onsets <- list()
+#  cases2 <- data.frame(cases = cases, day = c(1:nrow(cases)))
+#   for(i in 1:ncol(cases)){
+#      onsets[[i]] <-  cases2[,c(i, ncol(cases2))]
+#      onsets[[i]] <- as.data.frame(lapply(onsets[[i]], rep, onsets[[i]][,1]))
+#   }
+#             
+# probs <- list()
+# for(k in 1:length(onsets))  {
+#   om <- matrix(ncol = 33, nrow = nrow(onsets[[k]]))
+#   probs[[k]] <- matrix(ncol = nrow(cases), nrow = 33) #nrow = max inf dur
+#   for(i in 1:ncol(om)){
+#     om[,i] <- ifelse(i - onsets[[k]]$day>=0, (i - onsets[[k]]$day)+1, NA)
+#     t <- table(om[,i])
+#     if(length(t)>0) pt <- as.data.frame(prop.table(t)) #ifelse(length(t)>0, prop.table(t), cbind(rep(0, 3), rep(0, 3),rep(0, 3)))
+#     if(length(t) == 0) pt <- as.data.frame(cbind(0, 0))
+#       names(pt) <- c("InfDur", "p")
+#     probs[[k]][,i] <- c(pt$p, rep(0, nrow(probs[[k]])-nrow(pt)))
+#   }
+# }
+# 
+# 
+# # read in individual level data
+# 
+# MKdata_times <- read_MK_linelist("2-3-2020")
+
+    ##we now have everything to run our stan model 2
+  cfrmdl_je_data3<- list(T=Tmax, L=L,
+                      c = confirmeds,
+                      d = round(deaths),
+                      r = round(recovered),
+                      e = round(exit),
+                      n = infected,
+                      p = probs)
+```
