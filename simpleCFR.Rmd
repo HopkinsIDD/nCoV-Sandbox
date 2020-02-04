@@ -131,13 +131,13 @@ data {
   int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
   int <lower=0> d[T,L]; //  number of deaths reported on each day. 
   real <lower=0> n[T,L]; //number of currently infected people on each day. 
-  real <lower= 0, upper=1> dr[T,L]; // prrobability of detectinga recovery.
+  int w[L]; //is this wuhan
 }
 
 parameters {
   real <lower=0> lambda1; //parameter for time to death distribution
   real <lower=0> lambda; // parameter for time to death or recovery distribution
-  
+  real <lower= 0, upper=1> dr; // wuhan detect rate
 }
 
 transformed parameters {
@@ -148,7 +148,7 @@ transformed parameters {
  for (j in 1:L) {
     for (t in 1:T) {
       expected_deaths[t,j] = n[t,j] * lambda1 + 0.0001 ;
-      expected_r[t,j] = n[t,j] * (lambda - lambda1) * dr[t,j] + 0.0001;
+      expected_r[t,j] = n[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
       
 
     }
@@ -404,32 +404,34 @@ library(tidyverse)
 
   
 # Estimate detection rate for recoveries in hubei
-  detectrate <- matrix(1, nrow = nrow(infected), ncol = ncol(infected))
-
- obscfr <-  totrecov[nrow(totrecov),]/(totdeaths[nrow(totrecov),] + totrecov[nrow(totrecov),])
- detectrate[, 14] <- obscfr[14]/mean(obscfr[-14], na.rm = TRUE)
- 
+ #  detectrate <- matrix(1, nrow = nrow(infected), ncol = ncol(infected))
+ # 
+ # obscfr <-  totrecov[nrow(totrecov),]/(totdeaths[nrow(totrecov),] + totrecov[nrow(totrecov),])
+ # detectrate[, 14] <- obscfr[14]/mean(obscfr[-14], na.rm = TRUE)
+ # 
 
 ### estimating function for CFR
-ef <- function(h, deaths, recovered, n, detectrate){
-  expected_deaths = n * h[1]
-  expected_obs_recov = (n * h[2]) * (detectrate)
-  ee1 <- (deaths - expected_deaths)^2
-  ee2 <- (recovered - expected_obs_recov)^2
-  ee <- sum(ee1)+sum(ee2)
-  return(sum(ee))
-}
-
-
-fit<-optim(c(rep(.5, 2)), fn=ef, deaths= deaths, recovered = recovered, n = infected, detectrate = detectrate, control=c(maxit=100000))
-bhat<-fit$par
-
-h <- bhat[2] + bhat[1]
-rho <- integrate(function(x) {bhat[1]*exp(-h*x)}, 
-                        lower = 0, upper = Inf)$value
-
-rho
+# ef <- function(h, deaths, recovered, n, detectrate){
+#   expected_deaths = n * h[1]
+#   expected_obs_recov = (n * h[2]) * (detectrate)
+#   ee1 <- (deaths - expected_deaths)^2
+#   ee2 <- (recovered - expected_obs_recov)^2
+#   ee <- sum(ee1)+sum(ee2)
+#   return(sum(ee))
+# }
+# 
+# 
+# fit<-optim(c(rep(.5, 2)), fn=ef, deaths= deaths, recovered = recovered, n = infected, detectrate = detectrate, control=c(maxit=100000))
+# bhat<-fit$par
+# 
+# h <- bhat[2] + bhat[1]
+# rho <- integrate(function(x) {bhat[1]*exp(-h*x)}, 
+#                         lower = 0, upper = Inf)$value
+# 
+# rho
   
+w <- vector(length = 33)
+w[14] <- 1
 
   ##we now have everything to run our stan model 2 (results should match estimating function above)
   cfrmdl_je_data2 <- list(T=Tmax, L=L,
@@ -439,7 +441,7 @@ rho
                       e = exit,
                       n = infected,
                       dr = detectrate,
-                      V = 100)
+                      w = w)
   
 ```
 
