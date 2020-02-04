@@ -130,7 +130,7 @@ data {
   int <lower=0> L; //the number of locations we have data from
   int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
   int <lower=0> d[T,L]; //  number of deaths reported on each day. 
-  real <lower=0> n[T,L]; //number of currently infected people on each day. 
+  real <lower=0> c[T,L]; //number of confirmed cases people on each day. 
   int w[L]; //is this wuhan
 }
 
@@ -142,25 +142,30 @@ parameters {
 
 transformed parameters {
   real <lower=0> expected_deaths[T,L]; //  # deaths at time T
-  real <lower=0> expected_r[T,L]; //  # those who have exited due to recovery at T
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  real <lower=0> expected_riskset[T,L]; // expected people in risk set
 
-
- for (j in 1:L) {
-    for (t in 1:T) {
-      expected_deaths[t,j] = n[t,j] * lambda1 + 0.0001 ;
-      expected_r[t,j] = n[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+for (j in 1:L) {
+    expected_riskset[1,j] = c[1,j];
+    expected_deaths[1,j] = expected_riskset[1,j] * lambda1 + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[1,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+ 
+    for (t in 2:T) {
+      expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
+                                expected_deaths[t-1,j] - expected_riskset[t-1,j] * (lambda - lambda1);
+      expected_deaths[t,j] = expected_riskset[t,j] * lambda1 + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
       
-
     }
   }
-
 }
+
 
 model {
   //definitely can be made more effcient.
   for (j in 1:L) {
     for (t in 1:T) {
-      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_r[t,j]);
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
     }
   }
  
@@ -430,7 +435,7 @@ library(tidyverse)
 # 
 # rho
   
-w <- vector(length = 33)
+w <- vector(length = ncol(infected))
 w[14] <- 1
 
   ##we now have everything to run our stan model 2 (results should match estimating function above)
@@ -438,9 +443,6 @@ w[14] <- 1
                       c = confirmeds,
                       d = round(deaths),
                       r = round(recovered),
-                      e = exit,
-                      n = infected,
-                      dr = detectrate,
                       w = w)
   
 ```
@@ -448,11 +450,13 @@ w[14] <- 1
 
 ```{r, eval = FALSE}
   cfrmdl_je_res <- sampling(cfrmdl2, data=cfrmdl_je_data2,
-                         iter=2000, init = 1)
+                         iter=200, init = 1)
   chains <- extract(cfrmdl_je_res)
   lambda1 <- chains$lambda1
   lambda <- chains$lambda
-  outdat <- data.frame(lambda1 = lambda1, lambda = lambda)
+  dr <- chains$dr
+  #mean(dr)
+  outdat <- data.frame(lambda1 = lambda1, lambda = lambda, dr = dr)
 
   save(outdat, file = "data/outdat.RData")
 
@@ -494,7 +498,7 @@ quantile(rho, probs = c(.025, .975))
 #mean(lambda)
 plot(density(rho))
 plot(log(rho), type = "l")
-max(rho)
+#max(rho)
 
 
 ```
