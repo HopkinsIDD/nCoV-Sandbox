@@ -140,7 +140,32 @@ read_MK_linelist <- function(date) {
   hubei_name <- sprintf("data/MK Line List Hubei %s.csv", date)
   non_hubei_name <- sprintf("data/MK Line List not Hubei %s.csv",date)
   
-  hubei <- read_csv(hubei_name)
-  non_hubei <- read_csv(non_hubei_name)
+  ##Have non hubei ids be 100000 higher
+  hubei <- read_csv(hubei_name, col_types = 
+                      cols(date_onset_symptoms=col_date("%d.%m.%Y"),
+                           date_death_or_discharge=col_date("%d.%m.%Y"),
+                           date_admission_hospital=col_date("%d.%m.%Y"),
+                           date_confirmation=col_date("%d.%m.%Y"))) %>%
+    rename(chronic_disease=chronic_diseases) %>% 
+    rename(chronic_disease_binary = `chroDisea_Yes(1)/No(0)`)
+  
+    
+  non_hubei <- read_csv(non_hubei_name, col_types = 
+                          cols(latitude=col_number(),
+                               longitude=col_number(),
+                               date_onset_symptoms=col_date("%d.%m.%Y"),
+                               date_death_or_discharge=col_date("%d.%m.%Y"),
+                               date_admission_hospital=col_date("%d.%m.%Y"),
+                               date_confirmation=col_date("%d.%m.%Y"))) %>% 
+    select(-admin1, -admin2, -admin3, -country_new, -admin_id, -location) %>% 
+    mutate(ID=ID+10000) %>%
+    mutate(chronic_disease_binary=replace(chronic_disease_binary,chronic_disease_binary=="N/A",NA)) %>% 
+    mutate(chronic_disease_binary=as.numeric(chronic_disease_binary))
+  
+ 
+    
+  rc <- bind_rows(hubei, non_hubei)
+  
+  return(rc)
   
 }
