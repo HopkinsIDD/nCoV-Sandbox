@@ -24,122 +24,66 @@ This is a bit of an excercise in radical transparency, and things are going star
 
 # Analytic Blog
 
-## 2020-20-01 Case Fatality Ratio
+## 2020-02-04 Case Fatality Ratio
 
-OK, time to go where dragons fear to tread, and make an estimate of a CFR. The
-approache will be to attempt to use the cumulative confirmed cases, deaths and
-recoveries to make an estimate given delay distributions. Line list data will
-be used to help constrain the esitmates of the latter. For the moment
-focusing on **confirmed cases** rather than infectoins or anything else.
 
-Here is the basic model. We are interested in estimating the CFR among confirmed 
-cases, $\rho$. Presume that, conditional on death, time from confirmation to report of death follows a gamma distribution:
-$$\Pr(y_i<t|z_i) = F(t; \alpha_D, \beta_D)$$
-Where $y_i$ is the time of either death or recovery (i.e., censoring) for person $i$;
-$z_i$ indicates the final outcome is death; and $F(t;\alpha, \beta)$ is
-the cdf of a gamma distribution. Likewise, time from confirmation to recovery is:
-$$\Pr(y_i<t|\bar{z}_i)=G(t; \alpha_R, \beta_R)$$
-Where $\bar{z}_i$ indicates the final outcome is revoery, and $G(t;\alpha, \beta)$ is 
-the cdf of a gamma distribution.
-
-Let $d_{jt}$ be the number of reported deaths in locatoin $j$ and time $t$. Based on the 
-above:
-$$E(d_{jt}) = \sum_{k=0}^t c_{jk} \rho (F(t-k+1)-F(t-k))$$
-where $c_{jt}$ is the number of confirmed cases reported on day $t$. Likewise:
-$$E(r_{jt}) = \sum_{k=0}^t c_{jk} (1-\rho) (G(t-k+1)-G(t-k))$$
-where $r_jt$ is the number of recovered cases reported on day $t$.
-
-Note, for now we are ignoring the fact confirmation can happen at time to 
-death. This will come later.
-
-In stan this is:
-
-```{stan, eval=FALSE, output.var="cfrmdl"}
+```{stan, eval = FALSE, output.var="cfrmdl_const_haz"}
 
 data {
   int <lower=0> T; //the number of time steps included
   int <lower=0> L; //the number of locations we have data from
-  
-  real <lower=0> c[T,L]; //number of confirmed cases reported on each day. A real since might be estimated. 
-  int <lower=0> r[T,L]; //number of recovered cases reported on each day.
-  int <lower=0> d[T,L]; //number of deaths reported on each day. 
-  
- 
-
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> c[T,L]; //number of confirmed cases people on each day. 
+  int w[L]; //is this wuhan
 }
 
 parameters {
- real logit_rho; //the goal of this whole thing
- 
- real <lower=0> alphaD; //parameter for time to death distribution
- real <lower=0> betaD; //parameter for time to death distribution
-  
- real <lower=0> alphaR; //parameter for time to recovery distribution
- real <lower=0> betaR; //parameter for time to recovery distribution
-  
+  real <lower=0> lambda1; //parameter for time to death distribution
+  real <lower=0> lambda; // parameter for time to death or recovery distribution
+  real <lower= 0, upper=1> dr; // wuhan detect rate
 }
 
 transformed parameters {
-  real <lower=0, upper=1> rho; //CFR
-  real expected_deaths[T,L];
-  real <lower=0> expected_recoveries[T,L];
-  
-  rho = inv_logit(logit_rho);
-  
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  real <lower=0> expected_riskset[T,L]; // expected people in risk set
+
+for (j in 1:L) {
+    expected_riskset[1,j] = c[1,j];
+    expected_deaths[1,j] = expected_riskset[1,j] * lambda1 + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[1,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
  
- //this can be made more efficient...but for now./
-  for (j in 1:L) {
-    for (t in 1:T) {
-      expected_deaths[t,j]=0.0001;
-        for (k in 1:t) {
-          expected_deaths[t,j] += 
-            c[k,j] * rho *
-              (gamma_cdf(t-k+1,alphaD, betaD)-
-                  gamma_cdf(t+-k,alphaD, betaD));
-        }
-        
-        
+    for (t in 2:T) {
+      expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
+                                expected_deaths[t-1,j] - expected_riskset[t-1,j] * (lambda - lambda1);
+      expected_deaths[t,j] = expected_riskset[t,j] * lambda1 + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+      
     }
   }
-  
-   for (j in 1:L) {
-    for (t in 1:T) {
-      expected_recoveries[t,j]=0.0001;
-        for (k in 1:t) {
-          expected_recoveries[t,j] += 
-            c[k,j] * rho *
-              (gamma_cdf(t-k+1,alphaR, betaR)-
-                  gamma_cdf(t+-k,alphaR, betaR));
-        }
-        
-        
-    }
-  }
-  
 }
 
 
 model {
-
-  logit_rho ~ normal(-2,1);
-
   //definitely can be made more effcient.
   for (j in 1:L) {
     for (t in 1:T) {
-      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]);
-      target+=poisson_lpmf(r[t,j]|expected_recoveries[t,j]);
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
     }
   }
-  //print(target());
+ 
 }
 
 ```
+
+
 Prep data. 
 
 ```{r}
 
    #Load in the JHU CSSE Data
-   jhucsse <- read_JHUCSSE_cases("2020-01-30 23:59", 
+   jhucsse <- read_JHUCSSE_cases("2020-02-05 23:59", 
                                  append_wiki = TRUE)
   
   ##Continue to filter to China for the moment.
@@ -152,7 +96,7 @@ Prep data.
   
   incidence_data <- est_daily_incidence(jhucsse_china,
                                   ISOdate(2019,12,1),
-                                  ISOdate(2020,1,30))
+                                  ISOdate(2020,2,4))
          
    #look at this before we do it.
   inc_plt <- incidence_data%>%filter(Date>"2020-1-1") %>% 
@@ -185,7 +129,7 @@ Prep data.
   
    death_data <- est_daily_deaths(jhucsse_china,
                                   ISOdate(2019,12,1),
-                                  ISOdate(2020,1,30))
+                                  ISOdate(2020,2,4))
    
   #look at this before we do it.
   death_plt <- death_data%>%filter(Date>"2020-1-1") %>% 
@@ -221,7 +165,7 @@ Prep data.
   #Recoveries
   recovered_data <- est_daily_recovered(jhucsse_china,
                                   ISOdate(2019,12,1),
-                                  ISOdate(2020,1,30))
+                                  ISOdate(2020,2,4))
   
   
   #look at this before we do it.
@@ -255,12 +199,16 @@ Prep data.
   
   recovereds<- round(recovereds)
   
+  #make the 
+  w <- rep(0,L)
+  w[recovered_data$loc[recovered_data$Province_State=="Hubei"]] <-1
   
   ##we now have everything to run our stand model
   cfrmdl_data <- list(T=Tmax, L=L,
                       c=cases,
                       d=deaths,
-                      r=recovereds)
+                      r=recovereds,
+                      w=w)
   
   
 ```

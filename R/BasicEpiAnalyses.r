@@ -126,8 +126,8 @@ est_daily_incidence <- function (cum_data,
   incidence_data<- analyze %>% nest(-Province_State) %>%
     mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Confirmed,
                                    method="hyman"))) %>%
-    mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)],
-                                               Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
+    mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
+                                               Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)]))))))) %>%
     unnest(Incidence) %>% select(-data) %>% select(-cs)
 
   return(incidence_data)
@@ -160,9 +160,9 @@ est_daily_deaths <- function (cum_data,
   death_data<- analyze %>% nest(-Province_State) %>%
     mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Deaths,
                                    method="hyman"))) %>%
-    mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)],
-                                               Deaths= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
-    unnest(Incidence) %>% select(-data) %>% select(-cs)
+    mutate(Deaths=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
+                                               Deaths= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)]))))))) %>%
+    unnest(Deaths) %>% select(-data) %>% select(-cs)
 
   return(death_data)
 
