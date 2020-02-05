@@ -171,74 +171,83 @@ model {
  
 }
 
+
 ```
-
-
-
-Update for time varying hazards
-
+Time varying hazards
 ```{stan, eval = FALSE, output.var="cfrmdl3"}
 
 data {
   int <lower=0> T; //the number of time steps included
   int <lower=0> L; //the number of locations we have data from
+  int <lower = 0> V; // max infection duration (may not be needed)
   int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
   int <lower=0> d[T,L]; //  number of deaths reported on each day. 
-  real <lower=0> n[T,L]; //number of currently infected people on each day. 
-  //int <lower=0> e[T,L]; //number of confirmed infections (total) on each day. 
-  real <lower = 0, upper = 1> p[L, T, 33]; //matrix of probabilities of having each inf dur (33 = max)
+  real <lower=0> c[T,L]; //number of confirmed cases people on each day. 
+  int w[L]; //is this wuhan
 }
 
 parameters {
- 
-  real <lower = 0> lambda1;
-  real <lower = 0> lambda;
-  real <lower = -2, upper = 2> alpha1;
-  real <lower = -2, upper = 2> alpha;
- 
-  
+  real <lower=0> lambda1; //parameter for time to death distribution
+  real <lower=0> lambda2; // parameter for time to death or recovery distribution
+  real <lower=0> alpha1; //parameter for time to death distribution
+  real <lower=0> alpha2; // parameter for time to death or recovery distribution
+  real <lower= 0, upper=1> dr; // wuhan detect rate
 }
 
 transformed parameters {
   real <lower=0> expected_deaths[T,L]; //  # deaths at time T
-  real <lower=0> expected_r[T,L]; //  # those who have exited due to recovery at T
- // real <lower=0> expected_exits[T,L];
-  //real <lower=0> h1; //parameter for time to death distribution
- // real <lower=0> h; // parameter for time to death or recovery distribution
-  
- for (j in 1:L) {
-    for (t in 1:T) {
-    expected_deaths[t,j] = 0.0001;
-    expected_r[t, j] = 0.0001;
-      for (k in 1:33){
-        expected_deaths[k,j] += n[t,j] * p[j,t,k]*alpha1*lambda1*k^(alpha1-1) ;
-        expected_r[k,j] += n[t,j] * ( p[j,t,k]*alpha*lambda*k^(alpha-1) - p[j,t,k]*alpha1*lambda1*k^(alpha1-1));
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  //real <lower=0> expected_riskset[T,L]; // expected people in risk set
+  real <lower=0> expected_riskset[L,T,V]; // expected people in risk set in inf dur timescale
+  real <lower=0> h1[V];
+  real <lower=0> h2[V];
+  real <lower=0, upper=1> pk;
+
+
+for (j in 1:L) {
+    //expected_riskset[1,j] = c[1,j];
+    //expected_deaths[1,j] = expected_riskset[1,j] * lambda1 + 0.0001 ;
+    //expected_recovereds[1,j] = expected_riskset[1,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+    
+    expected_riskset[j,1,1] = c[1,j]+0.0001; //risk set on day 1 at inf duration 1 is just c1
+    expected_deaths[1,j] = expected_riskset[j,1,1] * alpha1*lambda1*1^(alpha1-1) + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[j,1,1] * (alpha2*lambda2*1^(alpha2-1)) * (dr)^w[j] + 0.0001;
+ 
+ 
+    for (t in 2:T) {
+      expected_riskset[j,t,1] = c[t,j]-c[t-1,j]+0.0001;
+      expected_deaths[t,j] = expected_riskset[j,t,1] * alpha1*lambda1*1^(alpha1-1) + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[j,t,1] * (alpha2*lambda2*1^(alpha2-1)) * (dr)^w[j] + 0.0001;
+       h1[1] = alpha1*lambda1*1^(alpha1-1);
+        h2[1] = alpha2*lambda2*1^(alpha2-1);
       
-      //  h1 += p[j,t,k]*alpha1*lambda1*k^(alpha1-1); //assuming weibull
-      //  h += p[j,t,k]*alpha*lambda*k^(alpha-1);
+      for(k in 2:t){
+        h1[k] = alpha1*lambda1*k^(alpha1-1);
+        h2[k] = alpha2*lambda2*k^(alpha2-1);
+        pk = (h1[k]+h2[k])/((alpha1*lambda1*t^(alpha1+1)/(alpha1+1)) + (alpha2*lambda2*t^(alpha2+1)/(alpha2+1))); // h(k) / H(t)
+        expected_riskset[j,t,k] = expected_riskset[j, t-1, k-1] - pk*(expected_deaths[t-1,j] +  expected_riskset[j, t-1, k-1]* (h2[k-1]));
+        expected_deaths[k,j] += expected_riskset[j,t,k] * h1[k]  ;
+        expected_recovereds[k,j] += expected_riskset[j,t,k] * (h2[k]) * (dr)^w[j];
+        
       }
-     
-     // expected_exits[t,j] = expected_deaths[t,j]+expected_r[t,j];
-
-
+  
+      
     }
   }
 }
+
 
 model {
   //definitely can be made more effcient.
   for (j in 1:L) {
     for (t in 1:T) {
-      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_r[t,j]);
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
     }
   }
-              print(lambda1);
-            print(alpha1);
-            print(expected_deaths[T,L]);
+ 
 }
 
 ```
-
 
 
 Prep data and run model. 
@@ -247,8 +256,8 @@ Prep data and run model.
 library(readr)
 library(tidyverse)
    #Load in the JHU CSSE Data
-  date <- ISOdate(2020,2,3)
-   jhucsse <- read_JHUCSSE_cases("2020-02-04 1:43", 
+  date <- ISOdate(2020,2,4)
+   jhucsse <- read_JHUCSSE_cases("2020-02-05 1:33", 
                                  append_wiki = TRUE)
   
   ##Continue to filter to China for the moment.
@@ -371,7 +380,7 @@ library(tidyverse)
   }
  
   deaths<- round(deaths)
-  
+  #deaths[deaths<0] <- 0
 
   totdeaths <-apply(deaths, 2, cumsum)
   totrecov <-apply(recovered, 2, cumsum)
@@ -404,9 +413,9 @@ library(tidyverse)
                       e = exit,
                       n = infected,
                       V = 100)
-
+Tmax
   
-
+#work on nonconstant hazards
   
 # Estimate detection rate for recoveries in hubei
  #  detectrate <- matrix(1, nrow = nrow(infected), ncol = ncol(infected))
@@ -436,7 +445,7 @@ library(tidyverse)
 # rho
   
 w <- vector(length = ncol(infected))
-w[14] <- 1
+w[unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))] <- 1
 
   ##we now have everything to run our stan model 2 (results should match estimating function above)
   cfrmdl_je_data2 <- list(T=Tmax, L=L,
@@ -444,20 +453,28 @@ w[14] <- 1
                       d = round(deaths),
                       r = round(recovered),
                       w = w)
-  
+    cfrmdl_je_data3<- list(T=Tmax, L=L,
+                      c = confirmeds,
+                      d = round(deaths),
+                      r = round(recovered),
+                      w = w, 
+                      V = nrow(cases))
 ```
 
 
 ```{r, eval = FALSE}
   cfrmdl_je_res <- sampling(cfrmdl2, data=cfrmdl_je_data2,
-                         iter=200, init = 1)
+                         iter=2000, init = 1)
   chains <- extract(cfrmdl_je_res)
   lambda1 <- chains$lambda1
+  #lambda2 <- chains$lambda2
   lambda <- chains$lambda
+  # alpha1 <- chains$alpha1
+  #alpha2 <- chains$alpha2
   dr <- chains$dr
-  #mean(dr)
+  mean(dr)
+  #outdat <- data.frame(lambda1 = lambda1, lambda2 = lambda, alpha1 = alpha1, alpha2 = alpha2 , dr = dr)
   outdat <- data.frame(lambda1 = lambda1, lambda = lambda, dr = dr)
-
   save(outdat, file = "data/outdat.RData")
 
 ```
