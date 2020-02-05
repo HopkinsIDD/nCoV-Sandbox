@@ -114,8 +114,14 @@ OR_table_age <- function(data, combine_CIs=TRUE) {
 ##'
 est_daily_incidence <- function (cum_data,
                                  first_date,
-                                 last_date) {
-  analyze <-   cum_data %>% drop_na(Confirmed)
+                                 last_date,
+                                 na_to_zeros=FALSE) {
+  if (na_to_zeros) {
+    analyze <-   cum_data %>% replace(is.na(.), 0)
+  } else {
+    analyze <-   cum_data %>% drop_na(Confirmed)
+  }
+ 
 
   ##Get the implied daily incidence for each province
   ##by fitting a monitonically increasing spline and then
@@ -149,6 +155,7 @@ est_daily_incidence <- function (cum_data,
 est_daily_deaths <- function (cum_data,
                                  first_date,
                                  last_date) {
+  
   analyze <-   cum_data %>% drop_na(Deaths)
 
   ##Get the implied daily incidence for each province

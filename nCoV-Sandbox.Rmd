@@ -34,13 +34,13 @@ data {
   int <lower=0> L; //the number of locations we have data from
   int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
   int <lower=0> d[T,L]; //  number of deaths reported on each day. 
-  real <lower=0> c[T,L]; //number of confirmed cases people on each day. 
+  real <lower=0> c[T,L]; //number of new confirmed cases on each day. 
   int w[L]; //is this wuhan
 }
 
 parameters {
-  real <lower=0> lambda1; //parameter for time to death distribution
-  real <lower=0> lambda; // parameter for time to death or recovery distribution
+  real <lower=0, upper=1> lambda1; //parameter for time to death distribution
+  real <lower=0, upper=1> lambda; // parameter for time to death or recovery distribution
   real <lower= 0, upper=1> dr; // wuhan detect rate
 }
 
@@ -55,8 +55,9 @@ for (j in 1:L) {
     expected_recovereds[1,j] = expected_riskset[1,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
  
     for (t in 2:T) {
-      expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
+       expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
                                 expected_deaths[t-1,j] - expected_riskset[t-1,j] * (lambda - lambda1);
+                            
       expected_deaths[t,j] = expected_riskset[t,j] * lambda1 + 0.0001 ;
       expected_recovereds[t,j] = expected_riskset[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
       
@@ -86,15 +87,16 @@ Prep data.
    jhucsse <- read_JHUCSSE_cases("2020-02-05 23:59", 
                                  append_wiki = TRUE)
   
-  ##Continue to filter to China for the moment.
-  ##also total the suspected and confirmed cases.
-  jhucsse_china <- jhucsse %>% 
-    filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
+  ##Filter to countries with at least
+  #jhucsse <- jhucsse %>% 
+  #  filter(Country_Region%in%
+  #           c("Mainland China", "Macau", "Hong Kong", "Belgium",
+  #             "Australia")) 
   
-  jhucsse_china$Province_State <- as.factor(jhucsse_china$Province_State)
+  jhucsse$Province_State <- as.factor(jhucsse$Province_State)
   
   
-  incidence_data <- est_daily_incidence(jhucsse_china,
+  incidence_data <- est_daily_incidence(jhucsse,
                                   ISOdate(2019,12,1),
                                   ISOdate(2020,2,4))
          
@@ -127,7 +129,7 @@ Prep data.
   }
   
   
-   death_data <- est_daily_deaths(jhucsse_china,
+   death_data <- est_daily_deaths(jhucsse,
                                   ISOdate(2019,12,1),
                                   ISOdate(2020,2,4))
    
@@ -163,7 +165,7 @@ Prep data.
   deaths<- round(deaths)
   
   #Recoveries
-  recovered_data <- est_daily_recovered(jhucsse_china,
+  recovered_data <- est_daily_recovered(jhucsse,
                                   ISOdate(2019,12,1),
                                   ISOdate(2020,2,4))
   
@@ -203,8 +205,11 @@ Prep data.
   w <- rep(0,L)
   w[recovered_data$loc[recovered_data$Province_State=="Hubei"]] <-1
   
+  cases[cases <= 0] <- 0.001 #does not like 0s.
+  cases[which(is.na(cases))] <- 0 #Not sure why we have this
+  
   ##we now have everything to run our stand model
-  cfrmdl_data <- list(T=Tmax, L=L,
+  cfrmdl_CH_data <- list(T=Tmax, L=L,
                       c=cases,
                       d=deaths,
                       r=recovereds,
@@ -214,10 +219,30 @@ Prep data.
 ```
 
 ```{r, eval=FALSE}
-  cfrmdl_res <- sampling(cfrmdl, data=cfrmdl_data,
-                         iter=200)
+  cfrmdl_CH_res <- sampling(cfrmdl_const_haz, data=cfrmdl_CH_data,
+                         iter=2000)
 
 ```
+
+```{r}
+##Translate this into estimates of the CFR, rho
+
+chains <- extract(cfrmdl_CH_res)
+
+rho_CH <- matrix(nrow = length(chains$lambda1))
+for(i in 1:length(chains$lambda1)){
+
+  try (
+    rho_CH[i] <- integrate(function(x)
+      {chains$lambda1[i]*exp(-chains$lambda[i]*x)}, 
+                        lower = 0, upper = Inf)$value)
+}
+
+
+median(rho_CH)
+quantile(rho_CH, probs = c(.025, .975))
+```
+Try running the same model with just non Hubei.
 
 ## Reconstructing Past Incidence Using Cumulative Reports (1-28-2020)
 
