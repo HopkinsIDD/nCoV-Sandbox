@@ -96,7 +96,7 @@ transformed parameters {
       expected_exit[t,j] = 0.0001;
       expected_deaths[t,j] = 0.0001;
         for (k in 1:t) {
-         expected_deaths[t,j] += n[k,j] * lambda1;
+         expected_deaths[k,j] += n[k,j] * lambda1;
          expected_exit[k,j] += n[k,j] * lambda;
        }
        expected_riskset[t,j] = c[t,j] - expected_exit[t,j] + 0.0001;
@@ -130,7 +130,7 @@ data {
   int <lower=0> L; //the number of locations we have data from
   int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
   int <lower=0> d[T,L]; //  number of deaths reported on each day. 
-  real <lower=0> c[T,L]; //number of confirmed cases people on each day. 
+  real <lower=0> c[T,L]; //number of new cases  on each day. 
   int w[L]; //is this wuhan
 }
 
@@ -182,7 +182,7 @@ data {
   int <lower = 0> V; // max infection duration (may not be needed)
   int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
   int <lower=0> d[T,L]; //  number of deaths reported on each day. 
-  real <lower=0> c[T,L]; //number of confirmed cases people on each day. 
+  real <lower=0> c[T,L]; //number of new cases  on each day. 
   int w[L]; //is this wuhan
 }
 
@@ -215,19 +215,19 @@ for (j in 1:L) {
  
  
     for (t in 2:T) {
-      expected_riskset[j,t,1] = c[t,j]-c[t-1,j]+0.0001;
+      expected_riskset[j,t,1] = c[t,j]+0.0001;
       expected_deaths[t,j] = expected_riskset[j,t,1] * alpha1*lambda1*1^(alpha1-1) + 0.0001 ;
       expected_recovereds[t,j] = expected_riskset[j,t,1] * (alpha2*lambda2*1^(alpha2-1)) * (dr)^w[j] + 0.0001;
-       h1[1] = alpha1*lambda1*1^(alpha1-1);
-        h2[1] = alpha2*lambda2*1^(alpha2-1);
+      h1[1] = alpha1*lambda1*1^(alpha1-1);
+      h2[1] = alpha2*lambda2*1^(alpha2-1);
       
       for(k in 2:t){
         h1[k] = alpha1*lambda1*k^(alpha1-1);
         h2[k] = alpha2*lambda2*k^(alpha2-1);
-        pk = (h1[k]+h2[k])/((alpha1*lambda1*t^(alpha1+1)/(alpha1+1)) + (alpha2*lambda2*t^(alpha2+1)/(alpha2+1))); // h(k) / H(t)
-        expected_riskset[j,t,k] = expected_riskset[j, t-1, k-1] - pk*(expected_deaths[t-1,j] +  expected_riskset[j, t-1, k-1]* (h2[k-1]));
-        expected_deaths[k,j] += expected_riskset[j,t,k] * h1[k]  ;
-        expected_recovereds[k,j] += expected_riskset[j,t,k] * (h2[k]) * (dr)^w[j];
+        pk = (h1[k]+h2[k])/((alpha1*lambda1/(alpha1+1)*((t)^(alpha1+1) - 2^(alpha1+1))) + (alpha2*lambda2/(alpha2+1)*((t)^(alpha2+1) - 2^(alpha2+1)))); // h(k) / H(t) (integrated from 2 to t)
+        expected_riskset[j,t,k] = expected_riskset[j, t-1, k-1] - pk*(expected_deaths[t-1,j] +  expected_riskset[j, t-1, k-1]* (h1[k-1]+ h2[k-1])) +0.0001;
+        expected_deaths[k,j] += expected_riskset[j,t,k] * h1[k]  +0.0001;
+        expected_recovereds[k,j] += expected_riskset[j,t,k] * (h2[k]) * (dr)^w[j]+0.0001;
         
       }
   
@@ -393,6 +393,7 @@ library(tidyverse)
   confirmeds[confirmeds == 0] <- 0.0001
   #recovered[recovered == 0] <- 0.0001
   infected[infected == 0] <- 0.001
+  cases[cases == 0] <- 0.0001
  
     ##we now have everything to run our stan model 
   cfrmdl_je_data1 <- list(T=Tmax, L=L,
@@ -403,11 +404,11 @@ library(tidyverse)
                       n = round(infected),
                       V = 100)
 
- 
+
 
   ##we now have everything to run our stan model 2
   cfrmdl_je_data2 <- list(T=Tmax, L=L,
-                      c = confirmeds,
+                      c = cases,
                       d = round(deaths),
                       r = round(recovered),
                       e = exit,
@@ -446,15 +447,15 @@ Tmax
   
 w <- vector(length = ncol(infected))
 w[unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))] <- 1
-
+c
   ##we now have everything to run our stan model 2 (results should match estimating function above)
   cfrmdl_je_data2 <- list(T=Tmax, L=L,
-                      c = confirmeds,
+                      c = cases,
                       d = round(deaths),
                       r = round(recovered),
                       w = w)
     cfrmdl_je_data3<- list(T=Tmax, L=L,
-                      c = confirmeds,
+                      c = cases,
                       d = round(deaths),
                       r = round(recovered),
                       w = w, 
@@ -463,8 +464,8 @@ w[unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], 
 
 
 ```{r, eval = FALSE}
-  cfrmdl_je_res <- sampling(cfrmdl2, data=cfrmdl_je_data2,
-                         iter=2000, init = 1)
+  cfrmdl_je_res <- sampling(cfrmdl3, data=cfrmdl_je_data3,
+                         iter=200)
   chains <- extract(cfrmdl_je_res)
   lambda1 <- chains$lambda1
   #lambda2 <- chains$lambda2
