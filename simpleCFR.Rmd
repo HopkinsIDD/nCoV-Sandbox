@@ -250,14 +250,87 @@ model {
 ```
 
 
+Time fixed hazards, but keeping track of risk sets (intermediate step)
+```{stan, eval = FALSE, output.var="cfrmdl3b"}
+
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+ // int <lower = 0> V; // max infection duration (may not be needed)
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> c[T,L]; //number of new cases  on each day. 
+  int w[L]; //is this wuhan
+}
+
+parameters {
+  real <lower=0> lambda1; //parameter for time to death distribution
+  real <lower=0> lambda2; // parameter for time to death or recovery distribution
+  //real <lower=0> alpha1; //parameter for time to death distribution
+  //real <lower=0> alpha2; // parameter for time to death or recovery distribution
+  real <lower= 0, upper=1> dr; // wuhan detect rate
+}
+
+transformed parameters {
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+  real <lower=0> expected_deaths[V,L]; //  # deaths at time T
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  //real <lower=0> expected_riskset[T,L]; // expected people in risk set
+  real <lower=0> expected_riskset[L,T,V]; // expected people in risk set in inf dur timescale
+  //real <lower=0> h1[V];
+//  real <lower=0> h2[V];
+ // real <lower=0, upper=1> pk[V];
+
+
+for (j in 1:L) {
+    
+    expected_riskset[j,1,1] = c[1,j]+0.0001; //risk set on day 1 at inf duration 1 is just c1
+    expected_deaths[1,j] = expected_riskset[j,1,1] * lambda1 + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[j,1,1] * lambda2 * (dr)^w[j] + 0.0001;
+ 
+
+    for (t in 2:T) {
+      expected_riskset[j,t,1] = c[t,j]+0.0001;
+      expected_deaths[t,j] = expected_riskset[j,t,1] * lambda1 + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[j,t,1] * lambda2 * (dr)^w[j] + 0.0001;
+     // h1[1] = lambda1;
+     // h2[1] = lambda2;
+      
+      for(k in 2:t){
+       // h1[k] =lambda1;
+       // h2[k] = lambda2;
+       // pk[k] = (h1[k]+h2[k])/((lambda1+lambda2)*(t)); // h(k) / H(t) (integrated from 0 to t). or, what proportion of all of the deaths we saw today are likely among people in this risk cohort?
+        expected_riskset[j,t,k] = expected_riskset[j, t-1, k-1] - (expected_riskset[j, t-1, k-1]*lambda1 +  (expected_riskset[j, t-1, k-1]* lambda2))+0.0001;
+        expected_deaths[k,j] += expected_riskset[j,t,k] * lambda1 ;
+        expected_recovereds[k,j] += expected_riskset[j,t,k] * lambda2 * (dr)^w[j];
+        //print(c[t,j])
+    // try computing expected deaths/recovs for each k separately and then sum over vector to get [t,j]?
+      }
+    }
+  }
+}
+
+
+model {
+  //definitely can be made more effcient.
+  for (j in 1:L) {
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
+    }
+  }
+ 
+}
+
+```
+
 Prep data and run model. 
 
 ```{r message=FALSE, warning=FALSE, include=FALSE}
 library(readr)
 library(tidyverse)
    #Load in the JHU CSSE Data
-  date <- ISOdate(2020,2,4)
-   jhucsse <- read_JHUCSSE_cases("2020-02-05 1:33", 
+  date <- ISOdate(2020,2,5)
+   jhucsse <- read_JHUCSSE_cases("2020-02-05 16:43", 
                                  append_wiki = TRUE)
   
   ##Continue to filter to China for the moment.
@@ -464,8 +537,8 @@ c
 
 
 ```{r, eval = FALSE}
-  cfrmdl_je_res <- sampling(cfrmdl3, data=cfrmdl_je_data3,
-                         iter=200)
+  cfrmdl_je_res <- sampling(cfrmdl2, data=cfrmdl_je_data2,
+                         iter=3000)
   chains <- extract(cfrmdl_je_res)
   lambda1 <- chains$lambda1
   #lambda2 <- chains$lambda2
