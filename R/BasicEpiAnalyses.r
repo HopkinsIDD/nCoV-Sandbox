@@ -154,9 +154,14 @@ est_daily_incidence <- function (cum_data,
 ##'
 est_daily_deaths <- function (cum_data,
                                  first_date,
-                                 last_date) {
+                                 last_date,
+                              na_to_zeros=FALSE) {
   
-  analyze <-   cum_data %>% drop_na(Deaths)
+  if (na_to_zeros) {
+    analyze <-   cum_data %>% replace(is.na(.), 0)
+  } else {
+    analyze <-   cum_data %>% drop_na(Deaths)
+  }
 
   ##Get the implied daily incidence for each province
   ##by fitting a monitonically increasing spline and then
@@ -217,3 +222,69 @@ est_daily_recovered <- function (cum_data,
 
 }
 
+
+
+##' 
+##' Function to automate the comparison of MERS-CoV deaths with
+##' that from the Kudos line list.
+##' 
+##' 
+##' @param kudos the data from the kudos line list.
+##' 
+##' @return a list with a data frame of results and a ggplot object.
+##' 
+compare_deaths_to_MERS <- function (kudos) {
+  mers_dat <- read_csv("data/MERSDeathPublic.csv", 
+                       col_types = cols(age_class=col_factor(levels = c("0-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-69", "70+"))))
+  
+  ##make look like the kudos dat enough for us to run same table
+  mers_dat <- mers_dat %>% rename(death=died) %>% 
+    rename(age_cat=age_class)
+  
+  mers_OR_tbl <- OR_table_age(mers_dat, combine_CIs = FALSE)
+  
+  #make the nCoV table look like the MERS one for a more direct 
+  #comparison.
+  
+  kudos <- kudos %>% 
+    mutate(age_cat=cut(age,breaks=c(0,10,20,30,40,50,60,70,1000),
+                       labels=c("0-9","10-19",
+                                "20-29","30-39",
+                                "40-49","50-59",
+                                "60-69","70+")))
+  
+  
+  age_OR_tbl <- OR_table_age(kudos, combine_CIs = FALSE)
+  
+  ##Replace observations with no data wiht NAs
+  no_data_index <- which(age_OR_tbl$dead==0)
+  age_OR_tbl$OR[no_data_index] <- NA
+  age_OR_tbl$CI_low[no_data_index] <- NA
+  age_OR_tbl$CI_high[no_data_index] <- NA
+  
+  ##combine to plot
+  comb_OR_tbl <- bind_rows(nCoV=age_OR_tbl,
+                           MERS=mers_OR_tbl, .id="disease")
+  
+  comb_OR_tbl$label <- sprintf("%1.2f (%1.2f, %1.2f)", 
+                               comb_OR_tbl$OR,
+                               comb_OR_tbl$CI_low,
+                               comb_OR_tbl$CI_high)
+  comb_OR_tbl$label[comb_OR_tbl$OR==1] <- NA
+  
+  mers_comp_plt <- ggplot(comb_OR_tbl, aes(x=age_cat, y=OR, color=disease, label=label)) +
+    geom_pointrange(aes(ymin=CI_low, ymax=CI_high),
+                    position = position_dodge2(width = 0.5, padding = 0.5)) +
+    scale_y_log10() + ylab("OR of death")+
+    xlab("Age") +
+    theme_bw()
+  
+  comb_OR_wide <- comb_OR_tbl %>% 
+    select(disease,age_cat,label) %>% 
+    pivot_wider(names_from=disease, values_from = label) 
+  
+  comb_OR_wide[6,c("nCoV","MERS")] <- "1"
+  comb_OR_wide$nCoV[no_data_index] <- "-"
+  
+  return(list(plt = mers_comp_plt, table = comb_OR_wide))
+}

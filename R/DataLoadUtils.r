@@ -5,6 +5,24 @@
 ##'
 ##' @return a data frame with the basic data.
 ##'
+readKudos3 <- function (filename) {
+  require(tidyverse)
+  rc <- read_csv(filename, col_types =
+                   cols(`reporting date`=col_date("%m/%d/%Y"),
+                        gender=col_factor(),
+                        symptom_onset = col_date("%m/%d/%Y")))
+  
+  return(rc)
+}
+
+
+##' Function to read in and do some minor cleaning on the
+##' "Kudos" data.
+##'
+##' @param filename the file name
+##'
+##' @return a data frame with the basic data.
+##'
 readKudos2 <- function (filename) {
   require(tidyverse)
   rc <- read_csv(filename, col_types =

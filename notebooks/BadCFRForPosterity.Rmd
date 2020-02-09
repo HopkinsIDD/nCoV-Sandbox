@@ -1,0 +1,113 @@
+---
+title: "Old Approach to CFR"
+output: html_document
+---
+
+OK, time to go where dragons fear to tread, and make an estimate of a CFR. The
+approache will be to attempt to use the cumulative confirmed cases, deaths and
+recoveries to make an estimate given delay distributions. Line list data will
+be used to help constrain the esitmates of the latter. For the moment
+focusing on **confirmed cases** rather than infectoins or anything else.
+
+Here is the basic model. We are interested in estimating the CFR among confirmed 
+cases, $\rho$. Presume that, conditional on death, time from confirmation to report of death follows a gamma distribution:
+$$\Pr(y_i<t|z_i) = F(t; \alpha_D, \beta_D)$$
+Where $y_i$ is the time of either death or recovery (i.e., censoring) for person $i$;
+$z_i$ indicates the final outcome is death; and $F(t;\alpha, \beta)$ is
+the cdf of a gamma distribution. Likewise, time from confirmation to recovery is:
+$$\Pr(y_i<t|\bar{z}_i)=G(t; \alpha_R, \beta_R)$$
+Where $\bar{z}_i$ indicates the final outcome is revoery, and $G(t;\alpha, \beta)$ is 
+the cdf of a gamma distribution.
+
+Let $d_{jt}$ be the number of reported deaths in locatoin $j$ and time $t$. Based on the 
+above:
+$$E(d_{jt}) = \sum_{k=0}^t c_{jk} \rho (F(t-k+1)-F(t-k))$$
+where $c_{jt}$ is the number of confirmed cases reported on day $t$. Likewise:
+$$E(r_{jt}) = \sum_{k=0}^t c_{jk} (1-\rho) (G(t-k+1)-G(t-k))$$
+where $r_jt$ is the number of recovered cases reported on day $t$.
+
+Note, for now we are ignoring the fact confirmation can happen at time to 
+death. This will come later.
+
+In stan this is:
+
+```{stan, eval=FALSE, output.var="cfrmdl"}
+
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  
+  real <lower=0> c[T,L]; //number of confirmed cases reported on each day. A real since might be estimated. 
+  int <lower=0> r[T,L]; //number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //number of deaths reported on each day. 
+  
+ 
+
+}
+
+parameters {
+ real logit_rho; //the goal of this whole thing
+ 
+ real <lower=0> alphaD; //parameter for time to death distribution
+ real <lower=0> betaD; //parameter for time to death distribution
+  
+ real <lower=0> alphaR; //parameter for time to recovery distribution
+ real <lower=0> betaR; //parameter for time to recovery distribution
+  
+}
+
+transformed parameters {
+  real <lower=0, upper=1> rho; //CFR
+  real expected_deaths[T,L];
+  real <lower=0> expected_recoveries[T,L];
+  
+  rho = inv_logit(logit_rho);
+  
+ 
+ //this can be made more efficient...but for now./
+  for (j in 1:L) {
+    for (t in 1:T) {
+      expected_deaths[t,j]=0.0001;
+        for (k in 1:t) {
+          expected_deaths[t,j] += 
+            c[k,j] * rho *
+              (gamma_cdf(t-k+1,alphaD, betaD)-
+                  gamma_cdf(t+-k,alphaD, betaD));
+        }
+        
+        
+    }
+  }
+  
+   for (j in 1:L) {
+    for (t in 1:T) {
+      expected_recoveries[t,j]=0.0001;
+        for (k in 1:t) {
+          expected_recoveries[t,j] += 
+            c[k,j] * rho *
+              (gamma_cdf(t-k+1,alphaR, betaR)-
+                  gamma_cdf(t+-k,alphaR, betaR));
+        }
+        
+        
+    }
+  }
+  
+}
+
+
+model {
+
+  logit_rho ~ normal(-2,1);
+
+  //definitely can be made more effcient.
+  for (j in 1:L) {
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]);
+      target+=poisson_lpmf(r[t,j]|expected_recoveries[t,j]);
+    }
+  }
+  //print(target());
+}
+
+```

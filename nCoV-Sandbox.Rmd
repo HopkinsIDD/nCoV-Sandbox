@@ -24,225 +24,131 @@ This is a bit of an excercise in radical transparency, and things are going star
 
 # Analytic Blog
 
-## 2020-02-04 Case Fatality Ratio
+## Brief epidmeiologic update and examination of overdispersion (2020-02-09 )
+
+One of the big questions about the nCoV-2019 epidemic is how do we
+reconcile the appareant $R_0$ of the large epidemic in Wuhan with the
+apparent lack of onward transmission elsewhere. Jess Metcalf and 
+I do a rough analysis of the overdispersion or control
+that would be needed ot reconcile these anlayses [LINK].
+
+Because all of the attempts at line list data from public source
+are not really keeping up with the pace of the epidemic as 
+detailed media reports, etc. become less common I have been generally
+ignoring them...but perhaps it is time just to check out how 
+recent updates to the "Kudos" line list have changed the picture, if at all.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+  kudos <- readKudos3("data/Kudos Line List-2-9-2020.csv") %>%
+   mutate(age_cat = cut(age, seq(0,100,10)))
+  
+  grid.arrange(age_dist_graph(kudos),
+               epi_curve_reported_cases(kudos),
+               nrow=2)
+  
+```
+
+The source of line list data is starting to shift as countries get
+there first few cases, which still make it to media reports, etc. Almost
+all ealry cases in the line list are from China, while the later ones
+are from elsewhere. 
+
+```{r, warning=FALSE}
+  ggplot(kudos, aes(x=symptom_onset, fill=as.factor(country))) +
+    geom_bar()
+```
 
 
-```{stan, eval = FALSE, output.var="cfrmdl_const_haz"}
+### age distribution of cases and deaths
+Not much more data on cases, but worth a brief reprise on the
+age distribution vs. merge. Automating this in fuctions as well.
 
-data {
-  int <lower=0> T; //the number of time steps included
-  int <lower=0> L; //the number of locations we have data from
-  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
-  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
-  real <lower=0> c[T,L]; //number of new confirmed cases on each day. 
-  int w[L]; //is this wuhan
-}
 
-parameters {
-  real <lower=0, upper=1> lambda1; //parameter for time to death distribution
-  real <lower=0, upper=1> lambda; // parameter for time to death or recovery distribution
-  real <lower= 0, upper=1> dr; // wuhan detect rate
-}
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+  mers_comp_analysis <- compare_deaths_to_MERS(kudos)
+  mers_comp_analysis$plt
+```
 
-transformed parameters {
-  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
-  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
-  real <lower=0> expected_riskset[T,L]; // expected people in risk set
+**Figure:** Odds ratio of death versus 50-59 year olds
+by age group for MERS-CoV and nCoV-2019. Log-scale.
 
-for (j in 1:L) {
-    expected_riskset[1,j] = c[1,j];
-    expected_deaths[1,j] = expected_riskset[1,j] * lambda1 + 0.0001 ;
-    expected_recovereds[1,j] = expected_riskset[1,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+
+**Table:** Odds ratio of death by age group for MERS=CoV and nCoV-2019
+```{r, echo=FALSE}
+
+kable(mers_comp_analysis$table)
+  
+
+```
+
+
+The few new cases have not changed the picture much. How does the age distribution of reported cases in China compare with the age distribution
+of cases nationally.Age distribution data from https://www.populationpyramid.net/china/2019/.
+
+```{r, echo=FALSE, warning = FALSE, message=FALSE}
+
+##Load the population pyramid data and collapse into 
+##10 year age categories
+pop_pyramid <- read_csv("data/Pop-pyramid-China-2019.csv") %>%
+  mutate(mid_age=rowMeans(matrix(as.numeric(str_split_fixed(Age,"-",2)),ncol=2)) ) %>% 
+  mutate(age_cat=cut(mid_age,breaks=c(0,10,20,30,40,50,60,70,1000),
+                       labels=c("0-9","10-19",
+                                "20-29","30-39",
+                                "40-49","50-59",
+                                "60-69","70+"))) %>% 
+  mutate(total=M+F) %>% 
+  select(-Age, -mid_age) %>% 
+  group_by(age_cat) %>% 
+  summarise(M=sum(M), F=sum(F), total=sum(total))
+
+
+## Now get the kudos data in the same form. Total only for now.
+## and use only chinese cases
+cases_by_age <- kudos %>%
+    mutate(age_cat=cut(age,breaks=c(0,10,20,30,40,50,60,70,1000),
+                       labels=c("0-9","10-19",
+                                "20-29","30-39",
+                                "40-49","50-59",
+                                "60-69","70+"))) %>% 
+  filter(country=="China") %>% 
+  drop_na(age_cat) %>% 
+  select(age_cat) %>% 
+  group_by(age_cat) %>% 
+  summarize(total=n())
+
+##merge data frames
+age_comp <- full_join(cases_by_age, select(pop_pyramid, age_cat, total), 
+                 by="age_cat") %>% 
+  rename(cases=total.x, population=total.y) %>% 
+  mutate(cases=cases/sum(cases), population=population/sum(population)) %>% 
+  mutate(RR=(cases/population)/(cases[6]/population[6]))
  
-    for (t in 2:T) {
-       expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
-                                expected_deaths[t-1,j] - expected_riskset[t-1,j] * (lambda - lambda1);
-                            
-      expected_deaths[t,j] = expected_riskset[t,j] * lambda1 + 0.0001 ;
-      expected_recovereds[t,j] = expected_riskset[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
-      
-    }
-  }
-}
 
+##Now compare the distributions
+age_comp_plt <- age_comp %>% 
+  select(-RR) %>% 
+  mutate(cases=-cases) %>% 
+  pivot_longer(-age_cat, names_to="group", values_to="p") %>% 
+  ggplot(aes(x=age_cat, y=p, fill=group)) +
+   geom_bar(stat="identity") +
+   coord_flip() +
+   scale_y_continuous(breaks=c(-.2,-.1,0,.1,.2), 
+                      limits=c(-.25,.25),
+                      labels =c("20%","10%","0%","10%","20%")) +
+    geom_text(data=age_comp, aes(x=age_cat, y=.2,
+                               label=round(RR,1), fill=NULL)) +
+    xlab("age category") + ylab("proportion of group") +
+    theme_bw() + theme(legend.position = "bottom")
+    
 
-model {
-  //definitely can be made more effcient.
-  for (j in 1:L) {
-    for (t in 1:T) {
-      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
-    }
-  }
- 
-}
-
+age_comp_plt
 ```
 
-
-Prep data. 
-
-```{r}
-
-   #Load in the JHU CSSE Data
-   jhucsse <- read_JHUCSSE_cases("2020-02-05 23:59", 
-                                 append_wiki = TRUE)
-  
-  ##Filter to countries with at least
-  #jhucsse <- jhucsse %>% 
-  #  filter(Country_Region%in%
-  #           c("Mainland China", "Macau", "Hong Kong", "Belgium",
-  #             "Australia")) 
-  
-  jhucsse$Province_State <- as.factor(jhucsse$Province_State)
-  
-  
-  incidence_data <- est_daily_incidence(jhucsse,
-                                  ISOdate(2019,12,1),
-                                  ISOdate(2020,2,4))
-         
-   #look at this before we do it.
-  inc_plt <- incidence_data%>%filter(Date>"2020-1-1") %>% 
-    ggplot(aes(x=Date,  y=Incidence, fill=Province_State)) +
-    geom_bar(stat="identity", position="stack") +
-    theme_bw()+theme(legend.position="bottom")
   
 
-  inc_plt
 
 
-  incidence_data<-
-    incidence_data%>%filter(Date>"2020-1-1")
-  
-  #Add columns with indices for time and location
-  incidence_data$loc <-
-    as.numeric(incidence_data$Province_State)
-  incidence_data$t <- as.numeric(as.Date(incidence_data$Date))-
-    min(as.numeric(as.Date(incidence_data$Date))) + 1
-  
-  Tmax <- max(incidence_data$t)
-  L <- max(incidence_data$loc)
-  cases <- matrix(0,nrow=Tmax, ncol=L)
-  
-  for (i in 1:nrow(incidence_data)) {
-    cases[incidence_data$t[i], incidence_data$loc[i]] <-
-      incidence_data$Incidence[i]
-  }
-  
-  
-   death_data <- est_daily_deaths(jhucsse,
-                                  ISOdate(2019,12,1),
-                                  ISOdate(2020,2,4))
-   
-  #look at this before we do it.
-  death_plt <- death_data%>%filter(Date>"2020-1-1") %>% 
-    ggplot(aes(x=Date,   y=Deaths, fill=Province_State)) +
-    geom_bar(stat="identity", position="stack") +
-    theme_bw()+theme(legend.position="bottom")
-  
-
-  death_plt
-
-
-  death_data<-
-    death_data%>%filter(Date>"2020-1-1") %>% 
-    drop_na(Deaths)
-  
-  
-  #Add columns with indices for time and location
-  death_data$loc <-
-    as.numeric(as.numeric(death_data$Province_State))
-  death_data$t <- as.numeric(as.Date(death_data$Date))-
-    min(as.numeric(as.Date(incidence_data$Date))) + 1
-  
-  
-  deaths <- matrix(0,nrow=Tmax, ncol=L)
-  
-  for (i in 1:nrow(death_data)) {
-    deaths[death_data$t[i], death_data$loc[i]] <-
-      death_data$Deaths[i]
-  }
-  
-  deaths<- round(deaths)
-  
-  #Recoveries
-  recovered_data <- est_daily_recovered(jhucsse,
-                                  ISOdate(2019,12,1),
-                                  ISOdate(2020,2,4))
-  
-  
-  #look at this before we do it.
-  recovered_plt <- recovered_data%>%filter(Date>"2020-1-1") %>% 
-    ggplot(aes(x=Date,  y=Recovered, fill=Province_State)) +
-    geom_bar(stat="identity", position="stack") +
-    theme_bw()+theme(legend.position="bottom")
-  
-
-  recovered_plt
-
-
-  recovered_data<-
-    recovered_data%>%filter(Date>"2020-1-1") %>% 
-    drop_na(Recovered)
-  
-  
-  #Add columns with indices for time and location
-  recovered_data$loc <-
-    as.numeric(as.numeric(recovered_data$Province_State))
-  recovered_data$t <- as.numeric(as.Date(recovered_data$Date))-
-    min(as.numeric(as.Date(recovered_data$Date))) + 1
-  
-  
-  recovereds <- matrix(0,nrow=Tmax, ncol=L)
-  
-  for (i in 1:nrow(recovered_data)) {
-    recovereds[recovered_data$t[i], recovered_data$loc[i]] <-
-      recovered_data$Recovered[i]
-  }
-  
-  recovereds<- round(recovereds)
-  
-  #make the 
-  w <- rep(0,L)
-  w[recovered_data$loc[recovered_data$Province_State=="Hubei"]] <-1
-  
-  cases[cases <= 0] <- 0.001 #does not like 0s.
-  cases[which(is.na(cases))] <- 0 #Not sure why we have this
-  
-  ##we now have everything to run our stand model
-  cfrmdl_CH_data <- list(T=Tmax, L=L,
-                      c=cases,
-                      d=deaths,
-                      r=recovereds,
-                      w=w)
-  
-  
-```
-
-```{r, eval=FALSE}
-  cfrmdl_CH_res <- sampling(cfrmdl_const_haz, data=cfrmdl_CH_data,
-                         iter=2000)
-
-```
-
-```{r}
-##Translate this into estimates of the CFR, rho
-
-chains <- extract(cfrmdl_CH_res)
-
-rho_CH <- matrix(nrow = length(chains$lambda1))
-for(i in 1:length(chains$lambda1)){
-
-  try (
-    rho_CH[i] <- integrate(function(x)
-      {chains$lambda1[i]*exp(-chains$lambda[i]*x)}, 
-                        lower = 0, upper = Inf)$value)
-}
-
-
-median(rho_CH)
-quantile(rho_CH, probs = c(.025, .975))
-```
-Try running the same model with just non Hubei.
 
 ## Reconstructing Past Incidence Using Cumulative Reports (1-28-2020)
 
