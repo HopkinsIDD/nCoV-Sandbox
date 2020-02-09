@@ -1,4 +1,5 @@
-# nCoV Sandbox
+nCoV 2019 Sandbox
+===================
 
 
 # What is this?
@@ -8,6 +9,70 @@ The nCoV Sandbox is a running analytic blog we are "writing" as we try to apply 
 This is a bit of an excercise in radical transparency, and things are going start out very messy...but will hopefully get cleaner and more meaningful as things go. But the old stuff will (for the moment) remain at the bottom for posterity.
 
 # Analytic Blog
+
+## Brief epidmeiologic update and examination of overdispersion (2020-02-09 )
+
+One of the big questions about the nCoV-2019 epidemic is how do we
+reconcile the appareant $R_0$ of the large epidemic in Wuhan with the
+apparent lack of onward transmission elsewhere. Jess Metcalf and 
+I do a rough analysis of the overdispersion or control
+that would be needed ot reconcile these anlayses [LINK].
+
+Because all of the attempts at line list data from public source
+are not really keeping up with the pace of the epidemic as 
+detailed media reports, etc. become less common I have been generally
+ignoring them...but perhaps it is time just to check out how 
+recent updates to the "Kudos" line list have changed the picture, if at all.
+
+![plot of chunk unnamed-chunk-67](figure/unnamed-chunk-67-1.png)
+
+The source of line list data is starting to shift as countries get
+there first few cases, which still make it to media reports, etc. Almost
+all ealry cases in the line list are from China, while the later ones
+are from elsewhere. 
+
+
+```r
+  ggplot(kudos, aes(x=symptom_onset, fill=as.factor(country))) +
+    geom_bar()
+```
+
+![plot of chunk unnamed-chunk-68](figure/unnamed-chunk-68-1.png)
+
+
+### age distribution of cases and deaths
+Not much more data on cases, but worth a brief reprise on the
+age distribution vs. merge. Automating this in fuctions as well.
+
+
+![plot of chunk unnamed-chunk-69](figure/unnamed-chunk-69-1.png)
+
+**Figure:** Odds ratio of death versus 50-59 year olds
+by age group for MERS-CoV and nCoV-2019. Log-scale.
+
+
+**Table:** Odds ratio of death by age group for MERS=CoV and nCoV-2019
+
+|age_cat |nCoV                |MERS              |
+|:-------|:-------------------|:-----------------|
+|0-9     |-                   |0.41 (0.11, 1.26) |
+|10-19   |-                   |0.19 (0.05, 0.52) |
+|20-29   |-                   |0.22 (0.12, 0.41) |
+|30-39   |0.45 (0.06, 2.36)   |0.20 (0.11, 0.35) |
+|40-49   |0.47 (0.06, 2.50)   |0.52 (0.31, 0.87) |
+|50-59   |1                   |1                 |
+|60-69   |6.69 (2.24, 24.82)  |2.86 (1.59, 5.26) |
+|70+     |19.80 (6.36, 76.63) |4.92 (2.79, 8.95) |
+
+
+The few new cases have not changed the picture much. How does the age distribution of reported cases in China compare with the age distribution
+of cases nationally.Age distribution data from https://www.populationpyramid.net/china/2019/.
+
+![plot of chunk unnamed-chunk-71](figure/unnamed-chunk-71-1.png)
+
+  
+
+
 
 
 ## Reconstructing Past Incidence Using Cumulative Reports (1-28-2020)
@@ -20,7 +85,7 @@ First let's load in the data. Currently using only
 confirmed cases (driven a bit by data source),
 but unclear how long this will be viable.
 
-![plot of chunk unnamed-chunk-1](figure/unnamed-chunk-1-1.png)![plot of chunk unnamed-chunk-1](figure/unnamed-chunk-1-2.png)
+![plot of chunk unnamed-chunk-72](figure/unnamed-chunk-72-1.png)![plot of chunk unnamed-chunk-72](figure/unnamed-chunk-72-2.png)
 
 Things looks a little funny prior to the first, but this
 does seem like it should give a rough pseudo epidemic curve for
@@ -43,12 +108,12 @@ list (https://docs.google.com/spreadsheets/d/1jS24DjSPVWa4iuxuD4OAXrE3QeI8c9BC1h
 ## Warning: Removed 31 rows containing non-finite values (stat_count).
 ```
 
-![plot of chunk unnamed-chunk-2](figure/unnamed-chunk-2-1.png)
+![plot of chunk unnamed-chunk-73](figure/unnamed-chunk-73-1.png)
 Note that we don't have any linelist information on the deaths
 that occured before arou 1/15 in this line lisat. Moving forward with this data comparing with MERS-CoV data from Saudi Arabia 
 through summer 2014.
 
-![plot of chunk unnamed-chunk-3](figure/unnamed-chunk-3-1.png)
+![plot of chunk unnamed-chunk-74](figure/unnamed-chunk-74-1.png)
 
 **Figure:** Odds ratio of death by age group for MERS=CoV and nCoV-2019. Log-scale.
 
@@ -143,7 +208,7 @@ individual line list information.
 ## Warning: Removed 18 rows containing non-finite values (stat_count).
 ```
 
-![plot of chunk unnamed-chunk-6](figure/unnamed-chunk-6-1.png)
+![plot of chunk unnamed-chunk-77](figure/unnamed-chunk-77-1.png)
 
 Now lets look at some basic infomration on survival by age group
 and gender.
@@ -217,7 +282,7 @@ Macau.
     geom_line() + scale_y_log10()
 ```
 
-![plot of chunk unnamed-chunk-8](figure/unnamed-chunk-8-1.png)
+![plot of chunk unnamed-chunk-79](figure/unnamed-chunk-79-1.png)
 
 Looking at all provinces, so let's narrow it to places that at some 
 point experience at least 25 confimed cases and 
@@ -245,8 +310,7 @@ are looking at the cumulative report rather than the
 
 ```
 ## Warning: All elements of `...` must be named.
-## Did you want `data = c(Country_Region, Update, Confirmed, Deaths, Recovered, Suspected, 
-##     Demised)`?
+## Did you want `data = c(Country_Region, Update, Confirmed, Deaths, Recovered, Suspected)`?
 ```
 
 ```r
@@ -284,7 +348,7 @@ are looking at the cumulative report rather than the
         geom_point() + scale_y_log10() + stat_smooth(method="lm", se=FALSE)
 ```
 
-![plot of chunk unnamed-chunk-9](figure/unnamed-chunk-9-1.png)
+![plot of chunk unnamed-chunk-80](figure/unnamed-chunk-80-1.png)
 
 Leaving it there for the moment due to lack of aggregate data. 
 
@@ -323,7 +387,7 @@ Ten year increments.
     geom_bar( color="grey") + coord_flip() + xlab("Age Catergory")
 ```
 
-![plot of chunk unnamed-chunk-10](figure/unnamed-chunk-10-1.png)
+![plot of chunk unnamed-chunk-81](figure/unnamed-chunk-81-1.png)
 
 Next, are we seeing any obvious differences in mortality
 by gender or age?
@@ -374,7 +438,7 @@ super informative at this point.
 ## Warning: Removed 11 rows containing non-finite values (stat_count).
 ```
 
-![plot of chunk unnamed-chunk-12](figure/unnamed-chunk-12-1.png)
+![plot of chunk unnamed-chunk-83](figure/unnamed-chunk-83-1.png)
 A touch interesting that all deaths are early on. This suggests either (A) surveillance was really biased towards deaths in the early days, or (B) a lot of the later reports have not had time to die. 
 
 [Note that there was perviously a 1-23-2020 summary 
