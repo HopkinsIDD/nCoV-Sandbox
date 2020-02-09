@@ -1,9 +1,4 @@
----
-title: "nCoV 2019 Sandbox"
-output:
-  html_document:
-    df_print: paged
----
+# nCoV Sandbox
 
 
 
