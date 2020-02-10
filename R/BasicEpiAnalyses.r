@@ -101,6 +101,41 @@ OR_table_age <- function(data, combine_CIs=TRUE) {
 }
 
 
+
+##'
+##' Function to fit monotonically increasing spline. Returns a function that 
+##' can be used to predict the spline for each date. 
+##' 
+##' 
+##' @param dates dates of observations
+##' @param obs the observations
+##' @param df degrees of freedon. 
+##' 
+##' @return a function that takse in some number of dates and gives predictions on those
+##' 
+fit_ispline <- function (dates, obs, df=round(length(obs)/3)) {
+  require(nnls)
+  require(splines2)
+  
+  #first get the basis
+  h <- iSpline(as.numeric(dates), df=df, intercept=T)
+  
+  
+  #fit the nnls model to the data
+  mdl <- nnls(h, obs)
+  coefs <- coef(mdl)
+  
+  
+  rc <- function(dates) {
+    if(length(dates)==0) {return(NULL)}
+    hnew <- predict(h, as.numeric(dates))
+     return(hnew%*%coefs)
+  }
+  
+  return(rc)
+}
+
+
 ##'
 ##' Function to extract approximate epidemic curves
 ##' from the cumulative case data.
@@ -130,11 +165,21 @@ est_daily_incidence <- function (cum_data,
   ##Making sure only to infer over trhe suport
   tmp_dt_seq <- seq(first_date, last_date, "days")
   incidence_data<- analyze %>% nest(-Province_State) %>%
-    mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Confirmed,
-                                   method="hyman"))) %>%
+    mutate(cs=map(data, ~fit_ispline(dates=.$Update, obs=.$Confirmed))) %>%
     mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
                                                Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)]))))))) %>%
     unnest(Incidence) %>% select(-data) %>% select(-cs)
+  
+  return(incidence_data)
+  
+  #####OLD VERSION 
+  # tmp_dt_seq <- seq(first_date, last_date, "days")
+  # incidence_data<- analyze %>% nest(-Province_State) %>%
+  #   mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Confirmed,
+  #                                  method="hyman"))) %>%
+  #   mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
+  #                                              Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)]))))))) %>%
+  #   unnest(Incidence) %>% select(-data) %>% select(-cs)
 
   return(incidence_data)
 
@@ -170,8 +215,7 @@ est_daily_deaths <- function (cum_data,
   ##Making sure only to infer over trhe suport
   tmp_dt_seq <- seq(first_date, last_date, "days")
   death_data<- analyze %>% nest(-Province_State) %>%
-    mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Deaths,
-                                   method="hyman"))) %>%
+    mutate(cs=map(data, ~fit_ispline(dates=.$Update, obs=.$Deaths))) %>%
     mutate(Deaths=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
                                                Deaths= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)]))))))) %>%
     unnest(Deaths) %>% select(-data) %>% select(-cs)
@@ -212,8 +256,7 @@ est_daily_recovered <- function (cum_data,
   ##Making sure only to infer over trhe suport
   tmp_dt_seq <- seq(first_date, last_date, "days")
   recovered_data<- analyze %>% nest(-Province_State) %>%
-    mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Recovered,
-                                   method="hyman"))) %>%
+    mutate(cs=map(data, ~ fit_ispline(dates=.$Update, obs=.$Recovered))) %>%
     mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)],
                                                Recovered= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
     unnest(Incidence) %>% select(-data) %>% select(-cs)

@@ -9,8 +9,13 @@ require(tidyverse)
 require(gridExtra)
 require(rstan)
 
-source("R/DataLoadUtils.r")
-source("R/BasicEpiAnalyses.r")
+knitr::opts_knit$set(root.dir = "..")
+
+
+source("../R/DataLoadUtils.r")
+source("../R/BasicEpiAnalyses.r")
+
+
 ```
 
 ```{stan, eval = FALSE, output.var="cfrmdl_const_haz"}
@@ -67,7 +72,7 @@ model {
 
 Prep data. 
 
-```{r}
+```{r, warning=FALSE, message=FALSE}
 
    #Load in the JHU CSSE Data
    jhucsse <- read_JHUCSSE_cases("2020-02-08 23:59", 
