@@ -165,14 +165,14 @@ read_MK_linelist <- function(date) {
                            date_death_or_discharge=col_date("%d.%m.%Y"),
                            date_admission_hospital=col_date("%d.%m.%Y"),
                            date_confirmation=col_date("%d.%m.%Y"))) %>%
-    rename(chronic_disease=chronic_diseases) %>% 
-    rename(chronic_disease_binary = `chroDisea_Yes(1)/No(0)`)
+    #rename(chronic_disease=chronic_diseases) %>% 
+   # rename(chronic_disease_binary = `chroDisea_Yes(1)/No(0)`)
   
     
   non_hubei <- read_csv(non_hubei_name, col_types = 
                           cols(latitude=col_number(),
                                longitude=col_number(),
-                               date_onset_symptoms=col_date("%d.%m.%Y"),
+                               #date_onset_symptoms=col_date("%d.%m.%Y"),
                                date_death_or_discharge=col_date("%d.%m.%Y"),
                                date_admission_hospital=col_date("%d.%m.%Y"),
                                date_confirmation=col_date("%d.%m.%Y"))) %>% 
@@ -186,5 +186,44 @@ read_MK_linelist <- function(date) {
   rc <- bind_rows(hubei, non_hubei)
   
   return(rc)
+  
+}
+
+
+##' Function to process the MK line lists read in above into a format sufficient for analysis
+##' @param data the dataframe containing linelist data
+##' 
+##' @param date the date string for the line list we are using. defines the administrative censoring time
+##'   
+##' 
+##' @return a combined data frame with the vars needed for survival anlaysis
+##' 
+process_MK_linelist <- function(data, date) {
+  tmp <- data
+  tmp$date_onset_symptoms <- ifelse(tmp$date_onset_symptoms == "pre 18.01.2020", "18.01.2020" , tmp$date_onset_symptoms)
+  tmp$date_onset_symptoms <- ifelse(tmp$date_onset_symptoms == "early january", "05.01.2020", tmp$date_onset_symptoms )
+  tmp$date_onset_symptoms <- ifelse(tmp$date_onset_symptoms == "end of December 2019", "31.12.2019" , tmp$date_onset_symptoms)
+  tmp$date_onset_symptoms <- ifelse(tmp$date_onset_symptoms == "10.01.2020 - 22.01.2020", "16.01.2020" , tmp$date_onset_symptoms)
+  tmp$date_onset_symptoms <- as.Date(tmp$date_onset_symptoms, format = "%d.%m.%Y")
+  year(tmp$date_onset_symptoms) <- ifelse(year(tmp$date_onset_symptoms) == 1010, 2020, year(tmp$date_onset_symptoms))
+  year(tmp$date_death_or_discharge) <- ifelse(year(tmp$date_death_or_discharge) %in% c(2022,2021), 2020, year(tmp$date_death_or_discharge))
+  month(tmp$date_onset_symptoms) <- ifelse(month(tmp$date_onset_symptoms) == 11, 1, month(tmp$date_onset_symptoms))
+  #tmp$start_date <- ymd(tmp$date_confirmation)
+  
+  tmp <- tmp %>% 
+    mutate(start_date = date_confirmation) %>% 
+    mutate(start_date = ifelse(is.na(start_date), (date_onset_symptoms), start_date)) %>% 
+    #mutate(start_date = ifelse(start_date>date_death_or_discharge, date_onset_symptoms, start_date)) %>% 
+    mutate(start_date = as.Date(start_date, origin = "1970-01-01")) %>% 
+    mutate(end_date = ifelse(!is.na(date_death_or_discharge), date_death_or_discharge, date)) %>% 
+    mutate(end_date = as.Date(end_date, origin = "1970-01-01") ) %>% 
+    mutate(t = end_date - start_date) %>% 
+    # mutate(delta = ifelse(`dead(0)/alive(1)` == 1 |outcome == "discharged", 2, 1)) %>% 
+    mutate(delta = ifelse(outcome == "discharged", 2, 0)) %>% 
+    mutate(delta = ifelse(outcome == "died", 1, delta)) %>% 
+    mutate(delta = ifelse(is.na(delta), 0, delta)) %>% 
+    select(ID, age, sex, province, date_confirmation, start_date, end_date, t, outcome, date_death_or_discharge, date_onset_symptoms, delta)
+  
+  return(tmp)
   
 }
