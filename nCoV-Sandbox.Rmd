@@ -32,7 +32,7 @@ apparent lack of onward transmission elsewhere. Jess Metcalf and
 I do a rough analysis of the overdispersion or control
 that would be needed ot reconcile these anlayses 
 <a href="DispersionExploration.html">Here</a>.
-
+      
 Because all of the attempts at line list data from public source
 are not really keeping up with the pace of the epidemic as 
 detailed media reports, etc. become less common I have been generally
