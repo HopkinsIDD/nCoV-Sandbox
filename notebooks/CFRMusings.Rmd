@@ -1,0 +1,332 @@
+---
+title: "CFRMusings"
+output: html_document
+---
+```{r setup, include=FALSE}
+#Preamble
+require(knitr)
+require(tidyverse)
+require(gridExtra)
+require(rstan)
+
+source("R/DataLoadUtils.r")
+source("R/BasicEpiAnalyses.r")
+```
+
+```{stan, eval = FALSE, output.var="cfrmdl_const_haz"}
+
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> c[T,L]; //number of new confirmed cases on each day. 
+  int w[L]; //is this wuhan
+}
+
+parameters {
+  real <lower=0, upper=1> lambda1; //parameter for time to death distribution
+  real <lower=0, upper=1> lambda; // parameter for time to death or recovery distribution
+  real <lower= 0, upper=1> dr; // wuhan detect rate
+}
+
+transformed parameters {
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  real <lower=0> expected_riskset[T,L]; // expected people in risk set
+
+for (j in 1:L) {
+    expected_riskset[1,j] = c[1,j];
+    expected_deaths[1,j] = expected_riskset[1,j] * lambda1 + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[1,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+ 
+    for (t in 2:T) {
+       expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
+                                expected_deaths[t-1,j] - expected_riskset[t-1,j] * (lambda - lambda1);
+                            
+      expected_deaths[t,j] = expected_riskset[t,j] * lambda1 + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+      
+    }
+  }
+}
+
+
+model {
+  //definitely can be made more effcient.
+  for (j in 1:L) {
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
+    }
+  }
+ 
+}
+
+```
+
+
+Prep data. 
+
+```{r}
+
+   #Load in the JHU CSSE Data
+   jhucsse <- read_JHUCSSE_cases("2020-02-08 23:59", 
+                                 append_wiki = TRUE)
+  
+  ##Filter to countries with at least
+  #jhucsse <- jhucsse %>% 
+  #  filter(Country_Region%in%
+  #           c("Mainland China", "Macau", "Hong Kong")) 
+  
+  jhucsse$Province_State <- as.factor(jhucsse$Province_State)
+  
+  
+  incidence_data <- est_daily_incidence(jhucsse,
+                                  ISOdate(2019,12,1),
+                                  ISOdate(2020,2,8))
+         
+   #look at this before we do it.
+  inc_plt <- incidence_data%>%filter(Date>"2020-1-1") %>% 
+    ggplot(aes(x=Date,  y=Incidence, fill=Province_State)) +
+    geom_bar(stat="identity", position="stack") +
+    theme_bw()+theme(legend.position="bottom")
+  
+
+  inc_plt
+
+
+  incidence_data<-
+    incidence_data%>%filter(Date>"2020-1-1")
+  
+  #Add columns with indices for time and location
+  incidence_data$loc <-
+    as.numeric(incidence_data$Province_State)
+  incidence_data$t <- as.numeric(as.Date(incidence_data$Date))-
+    min(as.numeric(as.Date(incidence_data$Date))) + 1
+  
+  Tmax <- max(incidence_data$t)
+  L <- max(incidence_data$loc)
+  cases <- matrix(0,nrow=Tmax, ncol=L)
+  
+  for (i in 1:nrow(incidence_data)) {
+    cases[incidence_data$t[i], incidence_data$loc[i]] <-
+      incidence_data$Incidence[i]
+  }
+  
+  
+   death_data <- est_daily_deaths(jhucsse,
+                                  ISOdate(2019,12,1),
+                                  ISOdate(2020,2,8))
+   
+  #look at this before we do it.
+  death_plt <- death_data%>%filter(Date>"2020-1-1") %>% 
+    ggplot(aes(x=Date,   y=Deaths, fill=Province_State)) +
+    geom_bar(stat="identity", position="stack") +
+    theme_bw()+theme(legend.position="bottom")
+  
+
+  death_plt
+
+
+  death_data<-
+    death_data%>%filter(Date>"2020-1-1") %>% 
+    drop_na(Deaths)
+  
+  
+  #Add columns with indices for time and location
+  death_data$loc <-
+    as.numeric(as.numeric(death_data$Province_State))
+  death_data$t <- as.numeric(as.Date(death_data$Date))-
+    min(as.numeric(as.Date(incidence_data$Date))) + 1
+  
+  
+  deaths <- matrix(0,nrow=Tmax, ncol=L)
+  
+  for (i in 1:nrow(death_data)) {
+    deaths[death_data$t[i], death_data$loc[i]] <-
+      death_data$Deaths[i]
+  }
+  
+  deaths<- round(deaths)
+  
+  #Recoveries
+  recovered_data <- est_daily_recovered(jhucsse,
+                                  ISOdate(2019,12,1),
+                                  ISOdate(2020,2,8), na_to_zeros = TRUE)
+  
+  
+  #look at this before we do it.
+  recovered_plt <- recovered_data%>%filter(Date>"2020-1-1") %>% 
+    ggplot(aes(x=Date,  y=Recovered, fill=Province_State)) +
+    geom_bar(stat="identity", position="stack") +
+    theme_bw()+theme(legend.position="bottom")
+  
+
+  recovered_plt
+
+
+  recovered_data<-
+    recovered_data%>%filter(Date>"2020-1-1") %>% 
+    drop_na(Recovered)
+  
+  
+  #Add columns with indices for time and location
+  recovered_data$loc <-
+    as.numeric(as.numeric(recovered_data$Province_State))
+  recovered_data$t <- as.numeric(as.Date(recovered_data$Date))-
+    min(as.numeric(as.Date(recovered_data$Date))) + 1
+  
+  
+  recovereds <- matrix(0,nrow=Tmax, ncol=L)
+  
+  for (i in 1:Tmax) {
+    recovereds[recovered_data$t[i], recovered_data$loc[i]] <-
+      recovered_data$Recovered[i]
+  }
+  
+  recovereds<- round(recovereds)
+  
+  #make the 
+  w <- rep(0,L)
+  w[recovered_data$loc[recovered_data$Province_State=="Hubei"]] <-1
+  
+  cases[cases <= 0] <- 0.001 #does not like 0s.
+  cases[which(is.na(cases))] <- 0 #Not sure why we have this
+  
+  recovereds[recovereds<=0] <- 0
+  
+  ##we now have everything to run our stand model
+  cfrmdl_CH_data <- list(T=Tmax, L=L,
+                      c=cases,
+                      d=deaths,
+                      r=recovereds,
+                      w=w)
+  
+  
+```
+
+```{r, eval=FALSE}
+  cfrmdl_CH_res <- sampling(cfrmdl_const_haz, data=cfrmdl_CH_data,
+                         iter=2000)
+
+```
+
+```{r}
+##Translate this into estimates of the CFR, rho
+
+chains <- extract(cfrmdl_CH_res)
+
+rho_CH <- matrix(nrow = length(chains$lambda1))
+for(i in 1:length(chains$lambda1)){
+
+  try (
+    rho_CH[i] <- integrate(function(x)
+      {chains$lambda1[i]*exp(-chains$lambda[i]*x)}, 
+                        lower = 0, upper = Inf)$value)
+}
+
+
+median(rho_CH)
+quantile(rho_CH, probs = c(.025, .975))
+```
+Try running the same model with just non Hubei.
+
+```{r}
+
+
+ ##we now have everything to run our stand model
+  cfrmdl_CH_data_no_Hubei <- list(T=Tmax, L=length(which(w==0)),
+                        c= cases[,which(w==0)],
+                        d= deaths[,which(w==0)],
+                        r=recovereds[,which(w==0)],
+                        w=w[which(w==0)]) #a little funny, but shoudl work
+  
+  cfrmdl_CH_res_no_Hubei <- sampling(cfrmdl_const_haz, data=cfrmdl_CH_data_no_Hubei,
+                         iter=2000)
+
+```
+
+```{r}
+##Translate this into estimates of the CFR, rho
+
+chains <- extract(cfrmdl_CH_res_no_Hubei)
+
+rho_CH_no_Hubei <- matrix(nrow = length(chains$lambda1))
+for(i in 1:length(chains$lambda1)){
+
+  try (
+    rho_CH_no_Hubei[i] <- integrate(function(x)
+      {chains$lambda1[i]*exp(-chains$lambda[i]*x)}, 
+                        lower = 0, upper = Inf)$value)
+}
+
+
+median(rho_CH_no_Hubei)
+quantile(rho_CH_no_Hubei, probs = c(.025, .975))
+```
+
+Big differences between including and not including Hubei. One thought
+is this could partially be fixed if we dealt better with the delay 
+disctribution.
+
+
+```{stan, eval = FALSE, output.var="cfrmdl_erlang"}
+
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> c[T,L]; //number of new confirmed cases on each day. 
+  int w[L]; //is this wuhan
+  int N; //the numberof compartments.
+}
+
+parameters {
+  real <lower=0, upper=1> lambda1[N]; //death rate per compartment
+  real <lower=0, upper=1> lambda2[N]; //recovery rate per compartment
+  real <lower=0, upper=1> alpha; //rate of movement between compartments.
+  real <lower= 0, upper=1> dr; // wuhan detect rate
+}
+
+transformed parameters {
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  real <lower=0> expected_riskset[T,L,N]; // expected people in each of the risk sets at each time.
+
+for (j in 1:L) {
+    expected_riskset[1,j,1] = c[1,j];
+    expected_deaths[1,j] = expected_riskset[1,j,1] * lambda1 + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[1,j,1] *
+        lambda2 * (dr)^w[j] + 0.0001;
+    
+    if(N>1) {
+      for (i in 2:N) {
+        expected_recovereds[1,j,i] = 0;
+      }
+    }
+ 
+    for (t in 2:T) {
+       expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
+                                expected_deaths[t-1,j] - expected_riskset[t-1,j] * (lambda - lambda1);
+                            
+      expected_deaths[t,j] = expected_riskset[t,j] * lambda1 + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+      
+    }
+  }
+}
+
+
+model {
+  //definitely can be made more effcient.
+  for (j in 1:L) {
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
+    }
+  }
+ 
+}
+
+```
+

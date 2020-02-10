@@ -5,6 +5,24 @@
 ##'
 ##' @return a data frame with the basic data.
 ##'
+readKudos3 <- function (filename) {
+  require(tidyverse)
+  rc <- read_csv(filename, col_types =
+                   cols(`reporting date`=col_date("%m/%d/%Y"),
+                        gender=col_factor(),
+                        symptom_onset = col_date("%m/%d/%Y")))
+  
+  return(rc)
+}
+
+
+##' Function to read in and do some minor cleaning on the
+##' "Kudos" data.
+##'
+##' @param filename the file name
+##'
+##' @return a data frame with the basic data.
+##'
 readKudos2 <- function (filename) {
   require(tidyverse)
   rc <- read_csv(filename, col_types =
@@ -76,7 +94,8 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
     mutate(Country_Region=replace(Country_Region, Country_Region=="China", "Mainland China")) %>%
     mutate(Country_Region=replace(Country_Region, Province_State=="Macau", "Macau")) %>%
     mutate(Country_Region=replace(Country_Region, Province_State=="Hong Kong", "Hong Kong")) %>%
-    mutate(Country_Region=replace(Country_Region, Province_State=="Taiwan", "Taiwan"))
+    mutate(Country_Region=replace(Country_Region, Province_State=="Taiwan", "Taiwan")) %>% 
+    mutate(Province_State=ifelse(is.na(Province_State),Country_Region, Province_State))
 
   if (append_wiki) {
     wiki <- read_csv("data/WikipediaWuhanPre1-20-2020.csv",
