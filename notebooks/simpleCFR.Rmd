@@ -14,6 +14,7 @@ require(tidyverse)
 require(gridExtra)
 require(rstan)
 require(splines2)
+require(readr)
 
 
 source("../R/DataLoadUtils.r")
@@ -55,7 +56,7 @@ for (j in 1:L) {
  
     for (t in 2:T) {
       expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
-                                expected_deaths[t-1,j] - expected_riskset[t-1,j] * (lambda - lambda1)* (dr)^w[j];
+                                expected_deaths[t-1,j] - expected_riskset[t-1,j] * (lambda - lambda1);
       expected_deaths[t,j] = expected_riskset[t,j] * lambda1 + 0.0001 ;
       expected_recovereds[t,j] = expected_riskset[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
       
@@ -126,7 +127,7 @@ for (j in 1:L) {
       for(k in 2:t){
        h1[k] = alpha1*lambda1^alpha1*k^(alpha1-1);
        h2[k] = alpha2*lambda2^alpha2*k^(alpha2-1);
-        expected_riskset[j][k,t] = expected_riskset[j][k-1,t-1] - (expected_riskset[j][k-1,t-1]*h1[k-1] +  (expected_riskset[j][k-1,t-1]* h2[k-1]*dr^w[j]))+0.0001;
+        expected_riskset[j][k,t] = expected_riskset[j][k-1,t-1] - (expected_riskset[j][k-1,t-1]*h1[k-1] +  (expected_riskset[j][k-1,t-1]* h2[k-1]))+0.0001;
         expected_deaths[k,j] +=  expected_riskset[j][k,t] * h1[k] ;
         expected_recovereds[k,j] +=  expected_riskset[j][k,t] * h2[k] * (dr)^w[j];
 
@@ -155,7 +156,7 @@ Prep data
 library(readr)
 library(tidyverse)
    #Load in the JHU CSSE Data
-  todaydate <- ISOdate(2020,2,9, hour = 23, min = 59, tz = "EST")
+  todaydate <- ISOdate(2020,2,10, hour = 23, min = 59, tz = "EST")
   
 
 mod2_nohubei <- moddata(todaydate, withHubei = FALSE)
@@ -164,8 +165,8 @@ mod2 <- moddata(todaydate, withHubei = TRUE)
 
 
 ```{r, eval = FALSE}
-  cfrmdl_je_res <- sampling(cfrmdl2, data=mod2,
-                         iter=3000)
+  cfrmdl_je_res <- sampling(cfrmdl3b, data=mod2,
+                         iter=100)
   chains <- extract(cfrmdl_je_res)
   lambda1 <- chains$lambda1
   #lambda2 <- chains$lambda2
@@ -176,7 +177,7 @@ mod2 <- moddata(todaydate, withHubei = TRUE)
   mean(dr)
   #outdat <- data.frame(lambda1 = lambda1, lambda2 = lambda, alpha1 = alpha1, alpha2 = alpha2 , dr = dr)
   outdat <- data.frame(lambda1 = lambda1, lambda = lambda, dr = dr)
-  save(outdat, file = "data/outdat.RData")
+  save(outdat, file = "../data/outdat.RData")
 
 ```
 
@@ -184,7 +185,7 @@ Summarize
 
 
 ```{r, echo = FALSE }
-load("data/outdat.RData")
+load("../data/outdat.RData")
 
 lambda1 <- outdat[,1] #chains$lambda1
 lambda <- outdat[,2] #chains$lambda
