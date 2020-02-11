@@ -40,7 +40,9 @@ tacsv <- merge(tempcsv, areacsv, by = "prov", all = TRUE)
 
 #estimate populations per province from world pop
 #for now, use china statistics bureau data
-pop <- read.csv("../data/context/pop2.csv", header = TRUE, colClasses = c(popper10k = "numeric"))
+pop <- read.csv("../data/context/pop2.csv", header = TRUE, 
+                colClasses = c(popper10k = "numeric", PerCapitaDisposibleIncome = "numeric",
+                               PassengerTraffic.in10000. = "numeric", BedsInHealthcareInst = "numeric"))
 datcsv <- merge(tacsv, pop, by = "prov", all = TRUE)
 datcsv$popdensity <- datcsv$popper10k*10000/datcsv$area
 datcsv2 <- merge(datcsv, precipcsv, by = "prov", all = TRUE)
