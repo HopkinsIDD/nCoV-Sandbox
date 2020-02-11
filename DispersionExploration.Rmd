@@ -9,24 +9,27 @@ author:
 
 ```{r setup, include=FALSE}
   knitr::opts_chunk$set(echo = TRUE)
-
-  country.dat <- read.csv("data/WHOSitrepTable2.csv")
   
   require(tidyverse)
   require(gridExtra)
 
+  country.dat <- read.csv("data/WHOSitrepTable2_20200211.csv")
+  country.dat <- country.dat %>% 
+                 mutate(total.cases = confirmed - cases.unknown) %>% 
+                 filter(total.cases>0)
+
 ```
 
 
-Despite introductions of the novel coronavirus into 27 countries, as of February 8, 2020, there has been little documented onward transmission. At the start of the outbreak, the key epidemiological quantity, $R_0$ was estimated to be somewhere between 2 and 3, i.e., early growth features of the outbreak indicate that, on average, one infected individual infects between 2 and 3 other individuals. However, there has been very little onward transmission outside of China (and perhaps even in other provinces within China) despite numerous introductions. These apparently contradictory results can be reconciled in two ways: (A) onward transmission of the virus is much less likely outside of China, presumably due to case finding paired with isolation and quarantine, or (B) transmission of CoVID-19 is in general overdispersed, i.e., the majority of transmission is due to a few superspreading events, while the vast majority of infected individuals do not transmit the virus. Perhaps most likely is that we are seeing some combination of these two effects. 
+Despite introductions of the novel coronavirus into 27 countries, as of February 11, 2020, there has been little documented onward transmission outside of China. At the start of the outbreak, the key epidemiological quantity, $R_0$, was estimated to be somewhere between 2 and 3 in Wuhan, i.e., early growth features of the outbreak indicate that, on average, one infected individual infects between 2 and 3 other individuals. This same rate of epidemic growth has not been observed outside of China (and perhaps even in other provinces within China) despite numerous introductions. These apparently contradictory observations can be reconciled in two ways: (A) onward transmission of the virus is much less likely outside of China, presumably due to case finding paired with isolation and quarantine, i.e. the effective reproductive number $R_e$ is reduced; or (B) transmission of COVID-19 is in general overdispersed, i.e., the majority of transmission is due to a few superspreading events, while the vast majority of infected individuals do not transmit the virus. Perhaps most likely is that we are seeing some combination of these two effects. 
 
-By examining the number of introductions that have failed to result in onward transmission, we can get a sense of how extreme each of these effects has to be, and how they might work in combination, to produce the observed results.  Following [Lloyd-Smith et al. 2005](https://www.nature.com/articles/nature04153), we assume that the number of secondary cases associated with an infectious individual is drawn from a negative binomial probability distribution with population mean $R_0$, where this distribution encodes individual characteristics of contact, environment, etc., that might modulate individual onward transmission. 
+By examining the number of introductions that have failed to result in onward transmission, we can get a sense of how extreme each of these effects has to be, and how they might work in combination, to produce the observed results.  Following [Lloyd-Smith et al. 2005](https://www.nature.com/articles/nature04153), we assume that the number of secondary cases associated with an infectious individual is drawn from a negative binomial probability distribution with population mean $R_e$, where this distribution encodes individual characteristics of contact, environment, etc., that might modulate individual onward transmission. 
 
 #### Data
 
-Using data from the [WHO Situation Report](https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports) on the number of assumed imported and local cases in countries to simulate an expected number of secondary infections caused by each known infection within country, assuming a uniform distribution of onward transmission events across all known cases. We repeat this simulation process 10,000 times to model the uncertainty in the data.
+We use data from the [WHO Situation Report](https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports) on the number of assumed imported (n=`r sum(country.dat$cases.travel)`) and local cases (n=`r sum(country.dat$cases.outside)`) in `r length(unique(country.dat$Country))` countries to simulate an expected number of secondary infections caused by each known infection within country, assuming a uniform distribution of onward transmission events across all known cases. We repeat this simulation process 10,000 times to model the uncertainty in the data.
 
-```{r}
+```{r, message=FALSE, warning=FALSE}
 nreps = 10000
 
 ## Generate datasets from known number of cases (total + assumed local transmission in each country)
@@ -38,7 +41,7 @@ sim_data <- function(nreps, ntotal.vec, nlocal.vec){
   return(tmp[-1,])
 }
  
-tmp.dat <- sim_data(nreps, country.dat$confirmed, country.dat$cases.outside)
+tmp.dat <- sim_data(nreps, country.dat$total.cases, country.dat$cases.outside)
 
 ```
 
@@ -46,44 +49,43 @@ tmp.dat <- sim_data(nreps, country.dat$confirmed, country.dat$cases.outside)
 
 #### Dispersion parameter estimation
 
-We then find the optimal $\theta$ that best make each assumed simulated data set consistent with a random value of $R_0$ drawn from a plausible range. Individual variation in infectiousness implies outbreaks are rarer but more explosive. Interpreting the $\theta$ parameter is eased by framing it in terms of the fraction of individuals responsible for 80\% of inwards transmission (by analogy with the 20/80 rule). 
+We then find the optimal dispersion paramater, $\theta$, that best makes each assumed simulated data set consistent with a random value of $R_e$ drawn from a plausible range. Individual variation in infectiousness implies outbreaks are rarer but more explosive. Interpreting the $\theta$ parameter is eased by framing it in terms of the fraction of individuals responsible for 80\% of onwards transmission (by analogy with [the 20/80 rule](https://www.pnas.org/content/94/1/338)). 
 
 Key functions used in the analysis:
 
 ```{r, message=FALSE, warning=FALSE}
 
-## Find the optimal theta for each value of R
-## and stuff everything in a data frame
+## likelihood function for theta to optimize
 to_optim <- function(theta, R0, data) {
   -sum(dnbinom(x=data, size=theta,  mu=R0, log = TRUE))
 }
 
+## optimization function
 do_optim <- function(R0, data) {
   return(optimize(to_optim,c(0,5000),R0=R0, data=data)$minimum)
 }
 
 
-##Get the proportion to infect some percentage of the population given
-##a R0 and theta.
-getPropInfected <- Vectorize(function(R0,theta,target.prop=0.80) {
+## Calculate proportion to infect some percentage of the population given
+## Re and theta.
+getPropInfected <- Vectorize(function(Re,theta,target.prop=0.80) {
     max.x <- 5000
-    tmp <- dnbinom(1:max.x, mu=R0, size=theta) * 1:max.x
+    tmp <- dnbinom(1:max.x, mu=Re, size=theta) * 1:max.x
     tmp2 <- rev(cumsum(rev(tmp)))/sum(tmp)
-    rc<-1-pnbinom(which.min(abs(tmp2-target.prop)), mu=R0, size=theta)
+    rc<-1-pnbinom(which.min(abs(tmp2-target.prop)), mu=Re, size=theta)
     return(rc)
   
 })
 
 
-
 ```
 
 
-```{r, ech0=FALSE, message=FALSE, warning=FALSE, fig.height=6, fig.width=5}
+```{r echo=FALSE, fig.height=6, fig.width=5, message=FALSE, warning=FALSE}
 
 # fitting to simulated data
 
-# theta MLE for each pair of simulated data + randomly drawn R0
+# theta MLE for each pair of simulated data + randomly drawn Re
 Rvec <- runif(nreps, 0.1, 3)
 
 tmp <- vector(length=nreps)
@@ -91,6 +93,7 @@ tmp_sars <- vector(length=nreps)
 tmp_R2 <- vector(length=nreps)
 for(i in 1:nreps){
   tmp[i] <- do_optim(Rvec[i], data = tmp.dat[,i]) #optimal theta for random R
+  tmp_R2[i] < do_optim(2, data=tmp.dat[,i]) # optimal theta for R=2
 }
 
 dat <- data.frame(Rvec, 
@@ -98,36 +101,35 @@ dat <- data.frame(Rvec,
                   p80 = getPropInfected(Rvec, tmp))
 
 
-##%>% filter(theta<10)
 p1 <- ggplot(dat%>%mutate(theta=ifelse(theta>10,10, theta)) , aes(x=Rvec, y=theta)) +
-        geom_point(col='navy', alpha=0.1) +
+        geom_point(col='steelblue2', alpha=0.1) +
         geom_smooth(col='black') +
         scale_x_log10() +
         scale_y_log10() +
-        theme_bw() + xlab("R0") +
+        theme_bw() + 
         geom_hline(yintercept = .16, lty=2, color="red" ) +
-        geom_rect(aes(xmin=2,xmax=3, ymin=min(theta), ymax=10),fill="black", alpha=.002) +
-        xlab(expression(R[0])) +
+        geom_rect(data=dat[1,], aes(xmin=2,xmax=3, ymin=0.01, ymax=10),fill="black", alpha=.2) +
+        xlab(expression(R[e])) +
         ylab(expression(theta))
 
 
 p2 <- ggplot(dat, aes(x=Rvec, y=p80)) +
-        geom_point(col='navy', alpha=0.1) +
+        geom_point(col='steelblue2', alpha=0.1) +
         geom_smooth(col='black') +
         scale_x_log10() +
-        scale_y_log10() + theme_bw() + xlab("R0")+
-        geom_rect(aes(xmin=2,xmax=3, ymin=min(p80), ymax=.1),fill="black", alpha=.002) +
+        scale_y_log10() + theme_bw() +
+        geom_rect(data=dat[1,], aes(xmin=2,xmax=3, ymin=0.001, ymax=0.2),fill="black", alpha=.2) +
         ylab("Proportion infecting 80%") +
-        xlab(expression(R[0]))
+        xlab(expression(R[e]))
 
 grid.arrange(p1, p2,
              ncol=1)
 ```
 
-**Figure** (top) The optimal $\theta$ versus $R_0$ over 10,000 simulated data sets, (bottom) the 
-proportion responsible for 80% of infections. Red dashed  horizontal line represents the dispersion
+**Figure** (top) The optimal $\theta$ versus $R_e$ over 10,000 simulated data sets and (bottom) the 
+proportion responsible for 80% of infections. Red dashed horizontal line represents the dispersion
 estimated for SARS in Singapore, and the shaded region represents a rough range of plausible
-$R_0$s for the outbreak of CovID-19 in Wuhan.
+$R_e$s for the outbreak of COVID-19 in Wuhan.
 
 ```{r, echo=FALSE}
 
@@ -136,21 +138,22 @@ inf80_Rp5to1 <- dat %>% filter(Rvec>=0.5 & Rvec<=1)
 
 ```
 
-We find a range of possible values of over-dispersion consistent with the observed data at $R_0 = 2$, as well as reduced mean $R_0$ values. We estimate that, if $R_0$ outside of China were between 2 and 3, as estimated within Wuhan, just 
+We find a range of possible values of over-dispersion consistent with the observed data at $R_e = 2$, as well as reduced mean $R_e$ values. We estimate that, if $R_e$ outside of China were between 2 and 3, as estimated within Wuhan, just 
 `r sprintf("%1.1f%% (range %1.1f, %1.1f )", mean(inf80_R2to3$p80)*100,  min(inf80_R2to3$p80)*100,  max(inf80_R2to3$p80)*100)` 
  of all infections would be responsible for 80% of onward transmission
- events. If $R_0$ was reduced to just below 1, in the 0.5-1 range, then
+ events. On average, the estimated dispersion parameter $\theta$ is less than that estimated for SARS in 2003, indicating that there may be more skew in the distribution of individual $R_e$ for COVID-2019 than for SARS.  
+ If $R_e$ was reduced to just below 1, in the 0.5-0.1 range, then
  `r sprintf("%1.1f%% (range %1.1f, %1.1f )", mean(inf80_Rp5to1$p80)*100,  min(inf80_Rp5to1$p80)*100,  max(inf80_R2to3$p80)*100)` 
- would be responsible for 80% of onward transmission. 
+ would be responsible for 80% of onward transmission.
 
 #### Conclusions
-This analysis indicates  the relative lack of observed onward transmission following introductions of CoVID-19 outside of China is consistent with moderate levels of over-dispersion and $R_0$s in the range of what is seen in Wuhan. This suggest we should be cautious about
-assuming the apparent disconnect is the result of effective control
+This analysis indicates  the relative lack of observed onward transmission following introductions of COVID-19 outside of China is consistent with moderate levels of over-dispersion and $R_e$ in the range of what has been observed in Wuhan. This suggests we should be cautious about
+assuming the apparent disconnect in epidemic growth in and outside of China is the result of effective control
 measures, or something fundamentally different about
-CoVID-19 transmission in and out of Wuhan (and China more broadly).
-These results driven by the extreme skew of the near absence of secondary infections emerging from international infections, and there 
+COVID-19 transmission outside of Wuhan (and China more broadly).
+These results are driven by the near absence of secondary infections emerging from international infections, and there 
 may be a number of onward transmissions that are unobserved, in which
 cases this analysis could be significantly underestimating the portion
-that do transmit. As further data emerges in the coming weeks, this could help identify which scenario is in play. However, this simple analysis may be useful in thinking about what scenarios are plausible as we try to understand the epidemiology of CoVID-19, and reconcile apparent inconsistencies between how the virus is spreading in Wuhan and elsewhere in the world. 
+that do transmit. As further data emerges in the coming weeks, this could help identify which scenario is in play. However, this simple analysis may be useful in thinking about what scenarios are plausible as we try to understand the epidemiology of COVID-19, and reconcile apparent inconsistencies between how the virus is spreading in Wuhan and elsewhere in the world. 
 
 
