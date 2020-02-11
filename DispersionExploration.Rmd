@@ -151,9 +151,6 @@ CoVID-19 transmission in and out of Wuhan (and China more broadly).
 These results driven by the extreme skew of the near absence of secondary infections emerging from international infections, and there 
 may be a number of onward transmissions that are unobserved, in which
 cases this analysis could be significantly underestimating the portion
-that do transmit. 
-
-
-may be unobserved (perhaps as a result of mild cases) or alternatively may simply not yet have occurred (as this is inherently a stochastic process). As further data emerges in the coming weeks, this could help identify which scenario is in play. However, this simple analysis may be useful in thinking about what scenarios are plausible as we try to understand the epidemiology of CoVID-19, and reconcile apparent inconsistencies between how the virus is spreading in Wuhan and elsewhere in the world. 
+that do transmit. As further data emerges in the coming weeks, this could help identify which scenario is in play. However, this simple analysis may be useful in thinking about what scenarios are plausible as we try to understand the epidemiology of CoVID-19, and reconcile apparent inconsistencies between how the virus is spreading in Wuhan and elsewhere in the world. 
 
 
