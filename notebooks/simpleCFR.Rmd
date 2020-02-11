@@ -1,0 +1,272 @@
+---
+title: "Simple CFR approach"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+ 
+require(knitr)
+require(tidyverse)
+require(gridExtra)
+require(rstan)
+require(splines2)
+
+
+source("../R/DataLoadUtils.r")
+source("../R/BasicEpiAnalyses.r")
+source("../R/CFRutils.r")
+
+```
+
+
+Here is the basic model. We are interested in estimating the CFR among confirmed 
+cases, $\rho$. Presume that the time from confirmation to report of death (censoring at recovery) follows an exponential distribution:
+$$\Pr(Y_i<t) = F(t; \lambda_1)$$
+Where $Y_i$ is the time from confirmation to  death for person $i$.
+
+Moreover, the time from confirmation to death or recovery (composite outcome) follows an exponential distribution:
+$$\Pr(T_i<t) = G(t; \lambda)$$
+Where $T_i$ is the time from confirmation to  death or recovery for person $i$.
+
+To ease application of the above models to our dataset, which is organized by calendar date, we will first assume both time to death and time to the composite outcome follow an exponential distirbution with a constant hazard function, $\lambda_1$ and $\lambda$, respectively, for now.
+
+Let $d_{jv}$ be the number of reported deaths in location $j$ and calendar date $v$. Based on the 
+above:
+$$E(d_{jv}) = \sum_{k=0}^v n_{jk} \lambda_1$$
+where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered). 
+
+In addition, 
+$$E(n_{jv}) = c_{jv} - \sum_{k=0}^{v-1} n_{jk}\lambda$$
+where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered). 
+
+
+
+Finally $$\rho = \int_0^\infty \hat{\lambda_1}[1 - \hat{G}(t)]dt = \int_0^\infty \hat{\lambda_1}e^{-\hat{\lambda}t}dt$$.
+
+Now, let's assume the hazard of death and recovery is not constant over time. Assume time to death and time to the composite endpoint both follow Weibull distributions, such that $$\Pr(Y_i<t) = F(t; \lambda_1, \alpha_1) = 1 - \textrm{exp}(-(\lambda_1 t)^{\alpha_1})$$ and $$\Pr(T_i<t) = G(t; \lambda, \alpha)=1 - \textrm{exp}(-(\lambda t)^\alpha)$$
+
+Let $d_{jv}$ be the number of reported deaths in location $j$ and calendar date $v$. Based on the 
+above:
+$$E(d_{jv}) = \sum_{k=0}^v \{n_{jk}  \sum_{h=1}^{max(T)} \alpha_1 \lambda_1 h^{\alpha_1 - 1}P(h|v)\}$$
+where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered), $h$ indexes the unique values of time from symptom onset to death or recovery.
+
+In addition, 
+$$E(n_{jv}) = c_{jv} - \sum_{k=0}^{v-1} \{n_{jk}\sum_{h=1}^{max(T)} \alpha \lambda h^{\alpha - 1}P(h|v)\}\}$$
+where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered). 
+
+But unclear how to estimate $P(h|v)$.
+
+
+Finally $$\rho = \int_0^\infty \hat{\lambda}_1\hat{\alpha}_1 t^{\hat{\alpha}_1-1}[1 - \hat{G}(t)]dt $$ 
+
+
+ <!-- = \int_0^\infty \hat{\lambda}_1\hat{\alpha}_1 t^{\hat{\alpha}_1-1}e^{-(\hat{\lambda}t)^\hat{\alpha}}dt$$.  -->
+First, define the stan model.
+
+```{stan, eval = FALSE, output.var="cfrmdl2"}
+
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> c[T,L]; //number of new cases  on each day. 
+  int w[L]; //is this wuhan
+}
+
+parameters {
+  real <lower=0> lambda1; //parameter for time to death distribution
+  real <lower=0> lambda; // parameter for time to death or recovery distribution
+  real <lower= 0, upper=1> dr; // wuhan detect rate
+}
+
+transformed parameters {
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  real <lower=0> expected_riskset[T,L]; // expected people in risk set
+
+for (j in 1:L) {
+    expected_riskset[1,j] = c[1,j];
+    expected_deaths[1,j] = expected_riskset[1,j] * lambda1 + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[1,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+ 
+    for (t in 2:T) {
+      expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
+                                expected_deaths[t-1,j] - expected_riskset[t-1,j] * (lambda - lambda1)* (dr)^w[j];
+      expected_deaths[t,j] = expected_riskset[t,j] * lambda1 + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+      
+    }
+  }
+}
+
+
+model {
+  //definitely can be made more effcient.
+  for (j in 1:L) {
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
+    }
+  }
+ 
+}
+
+
+```
+Now, attempt to allow hazards to vary over time.
+```{stan, eval = FALSE, output.var="cfrmdl3b"}
+
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  int <lower = 0> V; // max infection duration (may not be needed)
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> c[T,L]; //number of new cases  on each day. 
+  int w[L]; //is this wuhan
+}
+
+parameters {
+  //real <lower=0> lambda1; //parameter for time to death distribution
+  //real <lower=0> lambda2; // parameter for time to death or recovery distribution
+  //real <lower=0> alpha1; //parameter for time to death distribution
+  //real <lower=0> alpha2; // parameter for time to death or recovery distribution
+  real <lower= 0, upper=1> dr; // wuhan detect rate
+  real  <lower=0> lambda1;
+  real <lower=0> lambda2 ;
+  real  <lower=0> alpha1;
+  real <lower=0> alpha2 ;
+}
+
+transformed parameters {
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+ // real <lower=0> expected_deaths_day[L,T,V]; //  # deaths at time T of inf dur V
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  //real <lower=0> expected_riskset[T,L]; // expected people in risk set
+  matrix[V,T] expected_riskset[L]; // expected people in risk set in inf dur timescale
+  //real <lower=0> h1[V];
+//  real <lower=0> h2[V];
+ // real <lower=0, upper=1> pk[V];
+  real  <lower=0> h1[V];
+  real <lower=0> h2[V];
+
+
+for (j in 1:L) {
+    expected_riskset[j][1,1] = c[1,j]+0.0001; //risk set on day 1 at inf duration 1 is just c1
+    expected_deaths[1,j] = expected_riskset[j][1,1] * alpha1*lambda1^alpha1 + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[j][1,1] * alpha2*lambda2^alpha2 * (dr)^w[j] + 0.0001;
+ 
+
+    for (t in 2:T) {
+      expected_riskset[j][1,t] = c[t,j]+0.0001;
+      expected_deaths[t,j] = expected_riskset[j][1,t] * alpha1*lambda1^alpha1 + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[j][1,t] * alpha2*lambda2^alpha2 * (dr)^w[j] + 0.0001;
+      h1[1] = alpha1*lambda1^alpha1;
+      h2[1] = alpha2*lambda2^alpha2;
+      
+      for(k in 2:t){
+       h1[k] = alpha1*lambda1^alpha1*k^(alpha1-1);
+       h2[k] = alpha2*lambda2^alpha2*k^(alpha2-1);
+        expected_riskset[j][k,t] = expected_riskset[j][k-1,t-1] - (expected_riskset[j][k-1,t-1]*h1[k-1] +  (expected_riskset[j][k-1,t-1]* h2[k-1]*dr^w[j]))+0.0001;
+        expected_deaths[k,j] +=  expected_riskset[j][k,t] * h1[k] ;
+        expected_recovereds[k,j] +=  expected_riskset[j][k,t] * h2[k] * (dr)^w[j];
+        //print(c[t,j])
+    // try computing expected deaths/recovs for each k separately and then sum over vector to get [t,j]?
+    // use an erlang dist?
+      }
+    }
+  }
+}
+
+
+model {
+  //definitely can be made more effcient.
+  for (j in 1:L) {
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
+    }
+  }
+ 
+}
+
+```
+
+
+Prep data 
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+library(readr)
+library(tidyverse)
+   #Load in the JHU CSSE Data
+  todaydate <- ISOdate(2020,2,9, hour = 23, min = 59, tz = "EST")
+  
+
+mod2_nohubei <- moddata(todaydate, withHubei = FALSE)
+mod2 <- moddata(todaydate, withHubei = TRUE)
+```
+
+
+```{r, eval = FALSE}
+  cfrmdl_je_res <- sampling(cfrmdl2, data=mod2,
+                         iter=3000)
+  chains <- extract(cfrmdl_je_res)
+  lambda1 <- chains$lambda1
+  #lambda2 <- chains$lambda2
+  lambda <- chains$lambda
+  # alpha1 <- chains$alpha1
+  #alpha2 <- chains$alpha2
+  dr <- chains$dr
+  mean(dr)
+  #outdat <- data.frame(lambda1 = lambda1, lambda2 = lambda, alpha1 = alpha1, alpha2 = alpha2 , dr = dr)
+  outdat <- data.frame(lambda1 = lambda1, lambda = lambda, dr = dr)
+  save(outdat, file = "data/outdat.RData")
+
+```
+
+Summarize
+
+
+```{r, echo = FALSE }
+load("data/outdat.RData")
+
+lambda1 <- outdat[,1] #chains$lambda1
+lambda <- outdat[,2] #chains$lambda
+#alpha1 <- outdat[,3]
+#alpha2 <- outdat[,4]
+dr <- outdat[,3]
+  
+# plot(density(lambda1), xlim=c(0,.1), type = "l")
+# lines(density(lambda))
+# plot(lambda, type = "l")
+# plot(lambda1, type = "l")
+
+
+
+```
+
+Results
+```{r}
+
+#move this into stan model later
+rho <- matrix(nrow = length(lambda1))
+for(i in 1:length(lambda1)){
+
+  try (
+    rho[i] <- integrate(function(x) {lambda1[i]*exp(-lambda[i]*x)}, 
+                        lower = 0, upper = Inf)$value)
+}
+rho <- rho[!is.na(rho)]
+median(rho)
+quantile(rho, probs = c(.025, .975))
+#mean(lambda)
+plot(density(rho))
+plot(log(rho), type = "l")
+#max(rho)
+
+
+```
+
