@@ -23,8 +23,44 @@ source("../R/CFRutils.r")
 
 ```
 
+## Goal
+Here is the basic model. We are interested in estimating the CFR among confirmed 
+cases, $\rho$. 
+
+Presume that the time from confirmation to report of death (censoring at recovery) follows an arbitrary parametric distribution:
+$$\Pr(Y_i<k) = F(k; \theta)$$
+
+Where $Y_i$ is the time from confirmation to  death for person $i$ and $\theta$ is a vector of parameters required to define the parametric distribution..
+
+Moreover, the time from confirmation to death or recovery (composite outcome) follows an exponential distribution:
+$$\Pr(T_i<k) = G(k; \eta)$$
+Where $T_i$ is the time from confirmation to  death or recovery for person $i$.
 
 
+
+Let $d_{jt}$ be the number of new reported deaths in location $j$ on calendar date $t$. $d_{jt}$ depends on the hazard function for death over time since becoming a confirmed case and the distribution of infection duration on calendar date $t$.
+$$E(d_{jt}) = \sum_{k=1}^t n_{jtk}h_{1k}$$
+
+where $h_{1k}$ is the cause-specific hazard function for death over time since confirmation, and whose shape is determined by parameters $\theta$.
+
+
+Let $r_{jt}$ be the number of new reported recoveries in location $j$ on calendar date $t$. $r_{jt}$ depends on the hazard function for recovery over time since becoming a confirmed case and the distribution of infection duration on calendar date $t$.
+$$E(r_{jt}) = \sum_{k=1}^t n_{jtk}h_{2k}$$
+
+where $h_{2k}$ is the cause-specific hazard function for death over time since confirmation, and whose shape is determined by parameters $\eta$.
+
+For example, if we assume that $F{k}$ follows a Weibull distribution, $\theta = \{\lambda_1, \alpha_1\}$ and $h_{1k} = \alpha_1\lambda_1^{\alpha_1}k^{(\alpha_1-1)}$
+
+To simplify estimation of $\rho$ in our dataset, which is organized by calendar date, we will first assume both time to death and time to the composite outcome follow an exponential distirbution with a constant hazard functions, $\lambda_1$ and $\lambda$, respectively, for now. 
+
+Based on the above:
+$$E(d_{jt}) =  n_{jt} \lambda_1$$
+where $n_{jt}$ is the number of currently infected people in the risk set on that day.
+Similarly, let $r_{jt}$ be the number of new recoveries s in location $j$ on calendar date $t$. Based on the 
+above:
+$$E(r_{jt}) =  n_{jt} (\lambda - \lambda_1) $$
+
+## Stan models
 First, define the stan model.
 
 ```{stan, eval = FALSE, output.var="cfrmdl2"}
@@ -78,7 +114,7 @@ model {
 
 ```
 
-Now, attempt to allow hazards to vary over time.
+Now, attempt to allow hazards to vary over time (this model is under construction).
 ```{stan, eval = FALSE, output.var="cfrmdl3b"}
 
 data {
@@ -149,24 +185,25 @@ model {
 
 ```
 
-
+## Data management
 Prep data 
 
 ```{r message=FALSE, warning=FALSE, include=FALSE}
 library(readr)
 library(tidyverse)
    #Load in the JHU CSSE Data
-  todaydate <- ISOdate(2020,2,10, hour = 23, min = 59, tz = "EST")
+todaydate <- ISOdate(2020,2,10, hour = 23, min = 59, tz = "EST")
   
 
 mod2_nohubei <- moddata(todaydate, withHubei = FALSE)
 mod2 <- moddata(todaydate, withHubei = TRUE)
 ```
 
+## Run models
 
 ```{r, eval = FALSE}
-  cfrmdl_je_res <- sampling(cfrmdl3b, data=mod2,
-                         iter=100)
+  cfrmdl_je_res <- sampling(cfrmdl2, data=mod2,
+                         iter=2000)
   chains <- extract(cfrmdl_je_res)
   lambda1 <- chains$lambda1
   #lambda2 <- chains$lambda2
