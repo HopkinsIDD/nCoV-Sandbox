@@ -23,48 +23,7 @@ source("../R/CFRutils.r")
 ```
 
 
-Here is the basic model. We are interested in estimating the CFR among confirmed 
-cases, $\rho$. Presume that the time from confirmation to report of death (censoring at recovery) follows an exponential distribution:
-$$\Pr(Y_i<t) = F(t; \lambda_1)$$
-Where $Y_i$ is the time from confirmation to  death for person $i$.
 
-Moreover, the time from confirmation to death or recovery (composite outcome) follows an exponential distribution:
-$$\Pr(T_i<t) = G(t; \lambda)$$
-Where $T_i$ is the time from confirmation to  death or recovery for person $i$.
-
-To ease application of the above models to our dataset, which is organized by calendar date, we will first assume both time to death and time to the composite outcome follow an exponential distirbution with a constant hazard function, $\lambda_1$ and $\lambda$, respectively, for now.
-
-Let $d_{jv}$ be the number of reported deaths in location $j$ and calendar date $v$. Based on the 
-above:
-$$E(d_{jv}) = \sum_{k=0}^v n_{jk} \lambda_1$$
-where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered). 
-
-In addition, 
-$$E(n_{jv}) = c_{jv} - \sum_{k=0}^{v-1} n_{jk}\lambda$$
-where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered). 
-
-
-
-Finally $$\rho = \int_0^\infty \hat{\lambda_1}[1 - \hat{G}(t)]dt = \int_0^\infty \hat{\lambda_1}e^{-\hat{\lambda}t}dt$$.
-
-Now, let's assume the hazard of death and recovery is not constant over time. Assume time to death and time to the composite endpoint both follow Weibull distributions, such that $$\Pr(Y_i<t) = F(t; \lambda_1, \alpha_1) = 1 - \textrm{exp}(-(\lambda_1 t)^{\alpha_1})$$ and $$\Pr(T_i<t) = G(t; \lambda, \alpha)=1 - \textrm{exp}(-(\lambda t)^\alpha)$$
-
-Let $d_{jv}$ be the number of reported deaths in location $j$ and calendar date $v$. Based on the 
-above:
-$$E(d_{jv}) = \sum_{k=0}^v \{n_{jk}  \sum_{h=1}^{max(T)} \alpha_1 \lambda_1 h^{\alpha_1 - 1}P(h|v)\}$$
-where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered), $h$ indexes the unique values of time from symptom onset to death or recovery.
-
-In addition, 
-$$E(n_{jv}) = c_{jv} - \sum_{k=0}^{v-1} \{n_{jk}\sum_{h=1}^{max(T)} \alpha \lambda h^{\alpha - 1}P(h|v)\}\}$$
-where $n_{jv}$ is the number in the risk set on that day (i.e., cumulative number of confirmed cases reported on day $v$ minus the cumulative number of deaths on that day and the cumulative number of people recovered). 
-
-But unclear how to estimate $P(h|v)$.
-
-
-Finally $$\rho = \int_0^\infty \hat{\lambda}_1\hat{\alpha}_1 t^{\hat{\alpha}_1-1}[1 - \hat{G}(t)]dt $$ 
-
-
- <!-- = \int_0^\infty \hat{\lambda}_1\hat{\alpha}_1 t^{\hat{\alpha}_1-1}e^{-(\hat{\lambda}t)^\hat{\alpha}}dt$$.  -->
 First, define the stan model.
 
 ```{stan, eval = FALSE, output.var="cfrmdl2"}
@@ -117,6 +76,7 @@ model {
 
 
 ```
+
 Now, attempt to allow hazards to vary over time.
 ```{stan, eval = FALSE, output.var="cfrmdl3b"}
 
@@ -144,13 +104,8 @@ parameters {
 
 transformed parameters {
   real <lower=0> expected_deaths[T,L]; //  # deaths at time T
- // real <lower=0> expected_deaths_day[L,T,V]; //  # deaths at time T of inf dur V
   real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
-  //real <lower=0> expected_riskset[T,L]; // expected people in risk set
   matrix[V,T] expected_riskset[L]; // expected people in risk set in inf dur timescale
-  //real <lower=0> h1[V];
-//  real <lower=0> h2[V];
- // real <lower=0, upper=1> pk[V];
   real  <lower=0> h1[V];
   real <lower=0> h2[V];
 
@@ -174,9 +129,7 @@ for (j in 1:L) {
         expected_riskset[j][k,t] = expected_riskset[j][k-1,t-1] - (expected_riskset[j][k-1,t-1]*h1[k-1] +  (expected_riskset[j][k-1,t-1]* h2[k-1]*dr^w[j]))+0.0001;
         expected_deaths[k,j] +=  expected_riskset[j][k,t] * h1[k] ;
         expected_recovereds[k,j] +=  expected_riskset[j][k,t] * h2[k] * (dr)^w[j];
-        //print(c[t,j])
-    // try computing expected deaths/recovs for each k separately and then sum over vector to get [t,j]?
-    // use an erlang dist?
+
       }
     }
   }
