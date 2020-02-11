@@ -2,8 +2,8 @@
 title: "Dispersion vs. Control"
 output: html_document
 author:
-  - C. Jessica E. Metcalf
   - Kyra Grantz
+  - C. Jessica E. Metcalf
   - Justin Lessler
 ---
 
@@ -46,9 +46,9 @@ tmp.dat <- sim_data(nreps, country.dat$confirmed, country.dat$cases.outside)
 
 #### Dispersion parameter estimation
 
-We then find the optimal $\theta$ that best make each assumed imulated data set consistent with a random value of $R_0$ drawn from a plausible range. Individual variation in infectiousness implies outbreaks are rarer but more explosive. Interpreting the $\theta$ parameter is eased by framing it in terms of the fraction of individuals responsible for 80\% of onwards transmission (by analogy with the 20/80 rule). 
+We then find the optimal $\theta$ that best make each assumed simulated data set consistent with a random value of $R_0$ drawn from a plausible range. Individual variation in infectiousness implies outbreaks are rarer but more explosive. Interpreting the $\theta$ parameter is eased by framing it in terms of the fraction of individuals responsible for 80\% of inwards transmission (by analogy with the 20/80 rule). 
 
-Key functions used in the anlaysis:
+Key functions used in the analysis:
 
 ```{r, message=FALSE, warning=FALSE}
 
@@ -117,7 +117,7 @@ p2 <- ggplot(dat, aes(x=Rvec, y=p80)) +
         scale_x_log10() +
         scale_y_log10() + theme_bw() + xlab("R0")+
         geom_rect(aes(xmin=2,xmax=3, ymin=min(p80), ymax=.1),fill="black", alpha=.002) +
-        ylab("Propotion infecting 80%") +
+        ylab("Proportion infecting 80%") +
         xlab(expression(R[0]))
 
 grid.arrange(p1, p2,
@@ -129,13 +129,31 @@ proportion responsible for 80% of infections. Red dashed  horizontal line repres
 estimated for SARS in Singapore, and the shaded region represents a rough range of plausible
 $R_0$s for the outbreak of CovID-19 in Wuhan.
 
+```{r, echo=FALSE}
 
-We find a range of possible values of overdispersion consistent with the observed data at $R_0 = 2$, as well as reduced mean $R_0$ values. We estimate that, if $R_0$ outside of China were equal to 2, as estimated within Wuhan, just 6.5% of all infections would be responsible for 80% of onward transmission events. At modest
-reductoins in $R_0$, we find that 
+inf80_R2to3 <- dat %>% filter(Rvec>=2 & Rvec<=3) 
+inf80_Rp5to1 <- dat %>% filter(Rvec>=0.5 & Rvec<=1) 
+
+```
+
+We find a range of possible values of over-dispersion consistent with the observed data at $R_0 = 2$, as well as reduced mean $R_0$ values. We estimate that, if $R_0$ outside of China were between 2 and 3, as estimated within Wuhan, just 
+`r sprintf("%1.1f%% (range %1.1f, %1.1f )", mean(inf80_R2to3$p80)*100,  min(inf80_R2to3$p80)*100,  max(inf80_R2to3$p80)*100)` 
+ of all infections would be responsible for 80% of onward transmission
+ events. If $R_0$ was reduced to just below 1, in the 0.5-1 range, then
+ `r sprintf("%1.1f%% (range %1.1f, %1.1f )", mean(inf80_Rp5to1$p80)*100,  min(inf80_Rp5to1$p80)*100,  max(inf80_R2to3$p80)*100)` 
+ would be responsible for 80% of onward transmission. 
 
 #### Conclusions
-Here, we demonstrate that the relative lack of observed onward transmission following introductions of Covid-19 outside of China may be at least partially attributable to overdispersion in the population distribution of $R_0$. These results driven by the extreme skew of the near absence of secondary infections emerging from international infections. Intermediate numbers of onwards transmission may be unobserved (perhaps as a result of mild cases) or alternatively may simply not yet have occurred (as this is inherently a stochastic process). As further data emerges in the coming weeks, this could help identify which scenario is in play. 
+This analysis indicates  the relative lack of observed onward transmission following introductions of CoVID-19 outside of China is consistent with moderate levels of over-dispersion and $R_0$s in the range of what is seen in Wuhan. This suggest we should be cautious about
+assuming the apparent disconnect is the result of effective control
+measures, or something fundamentally different about
+CoVID-19 transmission in and out of Wuhan (and China more broadly).
+These results driven by the extreme skew of the near absence of secondary infections emerging from international infections, and there 
+may be a number of onward transmissions that are unobserved, in which
+cases this analysis could be significantly underestimating the portion
+that do transmit. 
 
-However, this simple analysis may be useful in thinking about what scenarios are plausible as we try to understand the epidemiology of Covid-19, and reconcile apparent inconsistencies between how the virus is spreading in Wuhan and elsewhere in the world. 
+
+may be unobserved (perhaps as a result of mild cases) or alternatively may simply not yet have occurred (as this is inherently a stochastic process). As further data emerges in the coming weeks, this could help identify which scenario is in play. However, this simple analysis may be useful in thinking about what scenarios are plausible as we try to understand the epidemiology of CoVID-19, and reconcile apparent inconsistencies between how the virus is spreading in Wuhan and elsewhere in the world. 
 
 
