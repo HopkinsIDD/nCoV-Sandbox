@@ -7,18 +7,23 @@ author:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+  knitr::opts_chunk$set(echo = TRUE)
+
+  country.dat <- read.csv("data/WHOSitrepTable2.csv")
+  
+  require(tidyverse)
+  require(gridExtra)
+
 ```
 
 
 Despite introductions of the novel coronavirus into 27 countries, as of February 8, 2020, there has been little documented onward transmission. At the start of the outbreak, the key epidemiological quantity, $R_0$ was estimated to be somewhere between 2 and 3, i.e., early growth features of the outbreak indicate that, on average, one infected individual infects between 2 and 3 other individuals. However, there has been very little onward transmission outside of China (and perhaps even in other provinces within China) despite numerous introductions. These apparently contradictory results can be reconciled in two ways: (A) onward transmission of the virus is much less likely outside of China, presumably due to case finding paired with isolation and quarantine, or (B) transmission of nCoV-2019 is in general overdispersed, i.e., the majority of transmission is due to a few superspreading events, while the vast majority of infected individuals do not transmit the virus. Perhaps most likely is that we are seeing some combination of these two effects. 
 
-By examining the number of introductions that have failed to result in onward transmission, we can get a sense of how extreme each of these effects has to be, and how they might work in combination, to produce the observed results.  Following (Lloyd-Smith et al. 2005), we assume that the number of secondary cases associated with an infectious individual is drawn from a negative binomial probability distribution with population mean $R_0$, where this distribution encodes individual characteristics of contact, environment, etc., that might modulate individual onward transmission. Using data curated by the Johns Hopkins Center for Systems Science and Engineering (https://gisanddata.maps.arcgis.com/apps/opsdashboard/index.html#/bda7594740fd40299423467b48e9ecf6), we calculate the likelihood of observing the reported distribution of international cases using the ‘dnbinom’ function in R, assuming that onward transmission occurs from only 5\%, 10\% or 25\% of the cases. 
+By examining the number of introductions that have failed to result in onward transmission, we can get a sense of how extreme each of these effects has to be, and how they might work in combination, to produce the observed results.  Following [Lloyd-Smith et al. 2005](https://www.nature.com/articles/nature04153), we assume that the number of secondary cases associated with an infectious individual is drawn from a negative binomial probability distribution with population mean $R_0$, where this distribution encodes individual characteristics of contact, environment, etc., that might modulate individual onward transmission. 
 
-Data is setup with three scenarios in turn assuming that 5%, 10% and 25% of
-cases outside China have had onward transmissions. 
-We further assume that 20% of these onward transmissions were to one or
-more cases, 20% of those to one or more were to 2 or more, and so on. 
+#### Data
+
+Using data curated by the [Johns Hopkins Center for Systems Science and Engineering](https://gisanddata.maps.arcgis.com/apps/opsdashboard/index.html#/bda7594740fd40299423467b48e9ecf6), we first calculate the likelihood of observing the reported distribution of international cases using the ‘dnbinom’ function in R, assuming that onward transmission occurs from only 5\%, 10\% or 25\% of the cases. Data is setup with three scenarios in turn assuming that 5%, 10% and 25% of cases outside China have had onward transmissions. We further assume that 20% of these onward transmissions were to one or more cases, 20% of those to one or more were to 2 or more, and so on. 
 
 ```{r}
 
@@ -44,8 +49,28 @@ totcases25[50:51] <- 3
 
 ```
 
-We then find the optimal $\theta$ that best make this assumed data
-consistent with several values of $R_0$.
+
+We also use data from the [WHO Situation Report](https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports) on the number of assumed imported and local cases in countries to simulate an expected number of secondary infections caused by each known infection within country, assuming a uniform distribution of onward transmission events across all known cases. We repeat this simulation process 10,000 times to model the uncertainty in our data.
+
+```{r}
+nreps = 10000
+
+## Generate datasets from known number of cases (total + assumed local transmission in each country)
+sim_data <- function(nreps, ntotal.vec, nlocal.vec){
+  tmp <- matrix(rep(0, nreps), nrow=1)
+  for(i in 1:length(ntotal.vec)){
+    tmp <- rbind(tmp, rmultinom(nreps, nlocal.vec[i], rep(1/ntotal.vec[i], ntotal.vec[i])))
+  }
+  return(tmp[-1,])
+}
+ 
+tmp.dat <- sim_data(nreps, country.dat$confirmed, country.dat$cases.outside)
+
+```
+
+#### Dispersion parameter estimation
+
+We then find the optimal $\theta$ that best make this assumed and simulated data consistent with several values of $R_0$. Individual variation in infectiousness implies outbreaks are rarer but more explosive. Interpreting the $\theta$ parameter is eased by framing it in terms of the fraction of individuals responsible for 80\% of onwards transmission (by analogy with the 20/80 rule). 
 
 ```{r, message=FALSE, warning=FALSE}
 
@@ -61,8 +86,11 @@ do_optim <- function(R0, data) {
 
 #R0 values to consider
 testR0 <- seq(0.01,3,length=300)
+```
 
-require(tidyverse)
+```{r, message=FALSE, warning=FALSE}
+
+# fitting to assumed data
 res<- data_frame(R0=testR0) %>% 
   mutate(`05%`=map_dbl(R0, do_optim, data=totcases0)) %>% 
   mutate(`10%`=map_dbl(R0, do_optim, data=totcases10)) %>% 
@@ -117,13 +145,11 @@ theta_plot <- theta_plot +
 
 ```
 
-Individual variation in infectiousness implies outbreaks are rarer but more explosive. Interpreting the $\theta$ parameter is eased by framing it in terms of the fraction of individuals responsible for 80\% of onwards transmission (by analogy with the 20/80 rule). Figure 2 indicates this fraction across the same spectrum of $R_0$ showing the fraction corresponding to the most likely $\theta$ for each data scheme. 
-
 ```{r, fig.height=8, fig.width=5, warning=FALSE, message=FALSE}
 
 getPropInfected <- Vectorize(function(R0,theta,target.prop=0.80) {
     max.x <- 5000
-    tmp <- dnbinom(1:max.x, mu=R0, size=theta) * max.x
+    tmp <- dnbinom(1:max.x, mu=R0, size=theta) * 1:max.x
     tmp2 <- rev(cumsum(rev(tmp)))/sum(tmp)
     rc<-1-pnbinom(which.min(abs(tmp2-target.prop)), mu=R0, size=theta)
     return(rc)
@@ -144,17 +170,52 @@ p80_plot <- ggplot(res, aes(x=R0, y=p80, color=onward)) +
   theme(legend.position="bottom",  legend.box = "vertical")
 
 
-require(gridExtra)
 grid.arrange(theta_plot, p80_plot,
              ncol=1,
              heights=c(1,1.3))
 
 ```
 
-Assuming a baseline $R_0$ of 2, the observed results are consistent with either a substantial reduction in $R_0$ outside of China due to differences in context or control efforts, a very high level of overdispersion, or some combination of the two. The three lines in Figure 1 shows the amount of overdispersion most consistent with the observed data over a range of extra-China $R_0$s for 5% (red) 10% (blue) and 25% (green) onward transmission. If $R_0$ was the same as estimated in China (i.e., 2), then the overdispersion would have to be such that 80% of cases were caused by 0.05%, 0.08% or 0.16% of cases respectively. If nCoV-2019 transmission is similarly overdispersed to SARS (i.e., $\theta=0.16$) then $R_0$ would have to be reduced to below 0.5 (and perhaps as low as 0.06) outside of China to best explain the observed results. 
+
+**Assumed data.** Assuming a baseline $R_0$ of 2, the observed results are consistent with either a substantial reduction in $R_0$ outside of China due to differences in context or control efforts, a very high level of overdispersion, or some combination of the two. The three lines in Figure 1 shows the amount of overdispersion most consistent with the observed data over a range of assumed extra-China $R_0$s for 5% (red) 10% (blue) and 25% (green) onward transmission. If $R_0$ was the same as estimated in China (i.e., 2), then the overdispersion would have to be such that 80% of cases were caused by 1.3%, 3.0% or 9.0% of cases respectively (Figure 2). If nCoV-2019 transmission is similarly overdispersed to SARS (i.e., $\theta=0.16$) then $R_0$ would have to be reduced to below 0.5 (and perhaps as low as 0.06) outside of China to best explain the observed results. 
 
 
-This outcome is driven by the extreme skew of the near absence of secondary infections emerging from international infections. Intermediate numbers of onwards transmission may be unobserved (perhaps as a result of mild cases) or alternatively may simply not yet have occurred (as this is inherently a stochastic process). As further data emerges in the coming weeks, this could help identify which scenario is in play. 
+```{r, message=FALSE, warning=FALSE, fig.height=6, fig.width=5}
+
+# fitting to simulated data
+
+# theta MLE for each pair of simulated data + randomly drawn R0
+Rvec <- runif(nreps, 0.01, 3)
+
+tmp <- vector(length=nreps)
+for(i in 1:nreps){
+  tmp[i] <- do_optim(Rvec[i], data = tmp.dat[,i])
+}
+
+dat <- data.frame(Rvec, 
+                  theta = tmp, 
+                  p80 = getPropInfected(Rvec, tmp))
+
+p1 <- ggplot(dat %>% filter(theta<10), aes(x=Rvec, y=theta)) +
+        geom_point(col='navy', alpha=0.1) +
+        geom_smooth(col='black') +
+        scale_x_log10() +
+        scale_y_log10() + theme_bw() + xlab("R0")
+
+p2 <- ggplot(dat, aes(x=Rvec, y=p80)) +
+        geom_point(col='navy', alpha=0.1) +
+        geom_smooth(col='black') +
+        scale_x_log10() +
+        scale_y_log10() + theme_bw() + xlab("R0")
+
+grid.arrange(p1, p2,
+             ncol=1)
+```
+
+**Simulated data.** Relaxing our assumptions about which fraction of cases contribute to onward transmission, we can similarly estimate the $\theta$ values and fraction of infections responsible for 80% of onward transmission using country-level data on number of total known cases and cases assumed to be from local transmission. Here, we find a range of possible values of overdispersion consistent with the observed data at $R_0 = 2$, as well as reduced mean $R_0$ values. We estimate that, if $R_0$ outside of China were equal to 2, as estimated within Wuhan, just 6.5% of all infections would be responsible for 80% of onward transmission events.
+
+#### Conclusions
+Here, we demonstrate that the relative lack of observed onward transmission following introductions of 2019-nCoV outside of China may be at least partially attributable to overdispersion in the population distribution of $R_0$. These results driven by the extreme skew of the near absence of secondary infections emerging from international infections. Intermediate numbers of onwards transmission may be unobserved (perhaps as a result of mild cases) or alternatively may simply not yet have occurred (as this is inherently a stochastic process). As further data emerges in the coming weeks, this could help identify which scenario is in play. 
 
 However, this simple analysis may be useful in thinking about what scenarios are plausible as we try to understand the epidemiology of nCoV, and reconcile apparent inconsistencies between how the virus is spreading in Wuhan and elsewhere in the world. 
 
