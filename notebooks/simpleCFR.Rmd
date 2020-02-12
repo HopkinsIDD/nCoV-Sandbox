@@ -47,7 +47,7 @@ where $h_{1k}$ is the cause-specific hazard function for death over time since c
 Let $r_{jt}$ be the number of new reported recoveries in location $j$ on calendar date $t$. $r_{jt}$ depends on the hazard function for recovery over time since becoming a confirmed case and the distribution of infection duration on calendar date $t$.
 $$E(r_{jt}) = \sum_{k=1}^t n_{jtk}h_{2k}$$
 
-where $h_{2k}$ is the cause-specific hazard function for death over time since confirmation, and whose shape is determined by parameters $\eta$.
+where $h_{2k}$ is the cause-specific hazard function for recovery over time since confirmation, and whose shape is determined by parameters $\eta$.
 
 For example, if we assume that $F{k}$ follows a Weibull distribution, $\theta = \{\lambda_1, \alpha_1\}$ and $h_{1k} = \alpha_1\lambda_1^{\alpha_1}k^{(\alpha_1-1)}$
 
@@ -128,44 +128,51 @@ data {
 }
 
 parameters {
-  //real <lower=0> lambda1; //parameter for time to death distribution
-  //real <lower=0> lambda2; // parameter for time to death or recovery distribution
-  //real <lower=0> alpha1; //parameter for time to death distribution
-  //real <lower=0> alpha2; // parameter for time to death or recovery distribution
-  real <lower= 0, upper=1> dr; // wuhan detect rate
-  real  <lower=0> lambda1;
-  real <lower=0> lambda2 ;
-  real  <lower=0> alpha1;
-  real <lower=0> alpha2 ;
+  real loglambda1; //parameter for time to death distribution
+  real loglambda2; // parameter for time to death or recovery distribution
+  real  logalpha1; //parameter for time to death distribution
+  real  logalpha2; // parameter for time to death or recovery distribution
+  real  logitdr; // wuhan detect rate
 }
-
 transformed parameters {
   real <lower=0> expected_deaths[T,L]; //  # deaths at time T
   real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
-  matrix[V,T] expected_riskset[L]; // expected people in risk set in inf dur timescale
-  real  <lower=0> h1[V];
+  //matrix[V,T] expected_riskset[L]; // expected people in risk set in inf dur timescale
+  real <lower=0> expected_riskset[V,T]; //expected risk set on each day of inf dur
+  real <lower=0> h1[V];
   real <lower=0> h2[V];
+  real <lower=0> lambda1; //parameter for time to death distribution
+  real <lower=0> lambda2; // parameter for time to death or recovery distribution
+  real <lower=0> alpha1; //parameter for time to death distribution
+  real <lower=0> alpha2; // parameter for time to death or recovery distribution
+  real <lower=0, upper=1> dr; //detectino rate
 
+  lambda1 = exp(loglambda1);
+  lambda2 = exp(loglambda2);
+  alpha1 = exp(logalpha1);
+  alpha2 = exp(logalpha2);
+  dr = 1/(1+exp(-logitdr));
 
 for (j in 1:L) {
-    expected_riskset[j][1,1] = c[1,j]+0.0001; //risk set on day 1 at inf duration 1 is just c1
-    expected_deaths[1,j] = expected_riskset[j][1,1] * alpha1*lambda1^alpha1 + 0.0001 ;
-    expected_recovereds[1,j] = expected_riskset[j][1,1] * alpha2*lambda2^alpha2 * (dr)^w[j] + 0.0001;
+   // expected_riskset[j][1,1] = c[1,j]+0.0001; //risk set on day 1 at inf duration 1 is just c1
+   expected_riskset[1,1] = c[1,j]+0.0001; //risk set on day 1 at inf duration 1 is just c1
+    expected_deaths[1,j] = expected_riskset[1,1] * alpha1*lambda1^alpha1 + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[1,1] * alpha2*lambda2^alpha2 * (dr)^w[j] + 0.0001;
  
 
     for (t in 2:T) {
-      expected_riskset[j][1,t] = c[t,j]+0.0001;
-      expected_deaths[t,j] = expected_riskset[j][1,t] * alpha1*lambda1^alpha1 + 0.0001 ;
-      expected_recovereds[t,j] = expected_riskset[j][1,t] * alpha2*lambda2^alpha2 * (dr)^w[j] + 0.0001;
+      expected_riskset[1,t] = c[t,j]+0.0001;
+      expected_deaths[t,j] = expected_riskset[1,t] * alpha1*lambda1^alpha1 + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[1,t] * alpha2*lambda2^alpha2 * (dr)^w[j] + 0.0001;
       h1[1] = alpha1*lambda1^alpha1;
       h2[1] = alpha2*lambda2^alpha2;
       
-      for(k in 2:t){
+      for(k in 2:V){
        h1[k] = alpha1*lambda1^alpha1*k^(alpha1-1);
        h2[k] = alpha2*lambda2^alpha2*k^(alpha2-1);
-        expected_riskset[j][k,t] = expected_riskset[j][k-1,t-1] - (expected_riskset[j][k-1,t-1]*h1[k-1] +  (expected_riskset[j][k-1,t-1]* h2[k-1]))+0.0001;
-        expected_deaths[k,j] +=  expected_riskset[j][k,t] * h1[k] ;
-        expected_recovereds[k,j] +=  expected_riskset[j][k,t] * h2[k] * (dr)^w[j];
+        expected_riskset[k,t] = (expected_riskset[k-1,t-1] - (expected_riskset[k-1,t-1]*h1[k-1] +  (expected_riskset[k-1,t-1]* h2[k-1]))+0.0001);
+        expected_deaths[t,j] +=  (k<=t)*(expected_riskset[k,t] * h1[k]) +0.0001;
+        expected_recovereds[t,j] += (k<=t)*(expected_riskset[k,t] * h2[k] * (dr)^w[j]) +0.0001;
 
       }
     }
@@ -192,18 +199,21 @@ Prep data
 library(readr)
 library(tidyverse)
    #Load in the JHU CSSE Data
-todaydate <- ISOdate(2020,2,10, hour = 23, min = 59, tz = "EST")
-  
+todaydate <- ISOdate(2020,2,11, hour = 00, min = 23, tz = "UTC")
+#note, weird stuff going on with the dates. so i took the max time in the newest file and inserted here, which fixed.
 
-mod2_nohubei <- moddata(todaydate, withHubei = FALSE)
-mod2 <- moddata(todaydate, withHubei = TRUE)
+
+mod2_nohubei <- moddata(todaydate, outsideChina = FALSE, ChinaOnly = TRUE, withHubei = FALSE, HubeiOnly = FALSE)
+mod2_all <- moddata(todaydate, ChinaOnly = TRUE, withHubei = TRUE, HubeiOnly = FALSE)
+mod2_hubei <- moddata(todaydate, outsideChina = FALSE, ChinaOnly = TRUE, withHubei = TRUE, HubeiOnly = TRUE)
+mod2_nochina <- moddata(todaydate, outsideChina = TRUE)
 ```
 
 ## Run models
 
 ```{r, eval = FALSE}
-  cfrmdl_je_res <- sampling(cfrmdl2, data=mod2,
-                         iter=2000)
+  cfrmdl_je_res <- sampling(cfrmdl2, data=mod2_hubei,
+                         iter=3000)
   chains <- extract(cfrmdl_je_res)
   lambda1 <- chains$lambda1
   #lambda2 <- chains$lambda2
@@ -230,10 +240,10 @@ lambda <- outdat[,2] #chains$lambda
 #alpha2 <- outdat[,4]
 dr <- outdat[,3]
   
-# plot(density(lambda1), xlim=c(0,.1), type = "l")
-# lines(density(lambda))
-# plot(lambda, type = "l")
-# plot(lambda1, type = "l")
+plot(density(lambda1), xlim=c(0,.1), type = "l")
+ lines(density(lambda))
+ plot(lambda, type = "l")
+ plot(lambda1, type = "l")
 
 
 
@@ -253,7 +263,7 @@ for(i in 1:length(lambda1)){
 rho <- rho[!is.na(rho)]
 median(rho)
 quantile(rho, probs = c(.025, .975))
-#mean(lambda)
+#mean(lambda1)
 plot(density(rho))
 plot(log(rho), type = "l")
 #max(rho)
