@@ -167,12 +167,12 @@ for (j in 1:L) {
       h1[1] = alpha1*lambda1^alpha1;
       h2[1] = alpha2*lambda2^alpha2;
       
-      for(k in 2:V){
+      for(k in 2:t){
        h1[k] = alpha1*lambda1^alpha1*k^(alpha1-1);
        h2[k] = alpha2*lambda2^alpha2*k^(alpha2-1);
         expected_riskset[k,t] = (expected_riskset[k-1,t-1] - (expected_riskset[k-1,t-1]*h1[k-1] +  (expected_riskset[k-1,t-1]* h2[k-1]))+0.0001);
-        expected_deaths[t,j] +=  (k<=t)*(expected_riskset[k,t] * h1[k]) +0.0001;
-        expected_recovereds[t,j] += (k<=t)*(expected_riskset[k,t] * h2[k] * (dr)^w[j]) +0.0001;
+        expected_deaths[t,j] +=  ((expected_riskset[k,t] * h1[k]) +0.0001;
+        expected_recovereds[t,j] += ((expected_riskset[k,t] * h2[k] * (dr)^w[j]) +0.0001;
 
       }
     }
