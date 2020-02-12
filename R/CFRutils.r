@@ -5,27 +5,57 @@
 ##' @example  mod2_nohubei <- moddata(ISOdate(2020,2,9, hour = 23, min = 59, tz = "EST") , withHubei = FALSE)
 ##' 
 ##' 
-moddata <- function(date, withHubei = TRUE ){
+##' 
+`%nin%` = Negate(`%in%`)
+
+moddata <- function(date, outsideChina = FALSE, ChinaOnly = FALSE, withHubei = TRUE, HubeiOnly = FALSE ){ 
   
+  if(outsideChina == TRUE){
+    ChinaOnly <- FALSE
+    withHubei <- FALSE
+    HubeiOnly <- FALSE
+  }
   #read in JHUCSSE data
   jhucsse <- read_JHUCSSE_cases(date, 
-                                append_wiki = TRUE)
+                                append_wiki = TRUE) 
   
   ##Continue to filter to China for the moment (we can turn this off)
 
-  jhucsse_china <- jhucsse %>% 
-    filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
+  #jhucsse_china <- jhucsse %>% 
+   # filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
   
-  jhucsse_china$Province_State <- as.factor(jhucsse_china$Province_State)
+ jhucsse_use <- jhucsse
+ 
+ if(outsideChina == TRUE){
+   jhucsse_use <- jhucsse_use %>% 
+     filter(Country_Region%nin%c("Mainland China", "Macau", "Hong Kong")) 
+ }
+ 
+ if(ChinaOnly == TRUE){
+   jhucsse_use <- jhucsse_use %>% 
+      filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
+ }
   
+  if(withHubei == FALSE){
+    jhucsse_use <- jhucsse_use %>% filter(Province_State != "Hubei")
+  }
+  
+  if(HubeiOnly == TRUE){
+    jhucsse_use <- jhucsse %>% filter(Province_State == "Hubei")
+  }
+  
+  
+ jhucsse_use$Province_State <- as.factor(jhucsse_use$Province_State)
+ jhucsse_use$loctest <- as.numeric(jhucsse_use$Province_State)
   #estimate daily incidence
-  incidence_data <- est_daily_incidence(jhucsse_china,
+  incidence_data <- est_daily_incidence(jhucsse_use,
                                         ISOdate(2019,12,1),
                                         date)
   
   incidence_data<-
     incidence_data%>%filter(Date>"2020-1-1")
-  
+ 
+ 
   #Add columns with indices for time and location
   incidence_data$loc <-
     as.numeric(incidence_data$Province_State)
@@ -35,6 +65,7 @@ moddata <- function(date, withHubei = TRUE ){
   #Max day of follow-up
   Tmax <- max(incidence_data$t)
   #number of locations considered
+ # L <- length(unique(incidence_data$loc))#
   L <- max(incidence_data$loc)
   
   cases <- matrix(0,nrow=Tmax, ncol=L)
@@ -45,15 +76,15 @@ moddata <- function(date, withHubei = TRUE ){
   }
   
   #estimate daily recoveries
-  recov_data <- est_daily_recovered(jhucsse_china,
+  recov_data <- est_daily_recovered(jhucsse_use,
                                     ISOdate(2019,12,1),
-                                    date,
-                                    na_to_zeros = TRUE)
+                                    date)#,
+                                    #na_to_zeros = FALSE)
   
   recov_data<-
     recov_data%>%filter(Date>"2020-1-1") %>%
     drop_na(Recovered)
-  
+
   #Add columns with indices for time and location
   recov_data$loc <-
     as.numeric(recov_data$Province_State)
@@ -69,7 +100,7 @@ moddata <- function(date, withHubei = TRUE ){
   
   
   #estimate daily deaths
-  death_data <- est_daily_deaths(jhucsse_china,
+  death_data <- est_daily_deaths(jhucsse_use,
                                  ISOdate(2019,12,1),
                                  date)
   
@@ -100,16 +131,16 @@ moddata <- function(date, withHubei = TRUE ){
   #make indicator of whether or not position x is hubei
   w <- vector(length = ncol(cases))
   w[unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))] <- 1
-  
-  #omit hubei if desired
-  if(withHubei == FALSE){
-    deaths <- deaths[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
-    recovered <- recovered[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
-    cases <- cases[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
-    w <- w[ -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
-    L <- length(w) #remake L if omitting hubei
-  }
-  
+  # 
+  # #omit hubei if desired
+  # if(withHubei == FALSE){
+  #   deaths <- deaths[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
+  #   recovered <- recovered[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
+  #   cases <- cases[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
+  #   w <- w[ -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
+  #   L <- length(w) #remake L if omitting hubei
+  # }
+  # 
   V <- nrow(cases) #max infection duration
   
   #gather data into a list
@@ -117,7 +148,7 @@ moddata <- function(date, withHubei = TRUE ){
                      c = cases,
                      d = round(deaths),
                      r = round(recovered),
-                     w = w, 
+                     w = array(w), 
                      V = V)
   
   return(cfrmdl_dat)
