@@ -49,13 +49,10 @@ readKudos <- function (filename) {
 }
 
 
-
 ##'
-##' Pulls the JHUCSSE total case count data up
-##' until (and including) a given date from github. This will be automated.
-##'
-##' @param last_time the last time to consider data from
-##' @param append_wiki sjpi;d we also append data from wikipedia.
+##' Pulls the JHUCSSE total case count data up to current date from github.
+##' This version checks what is already saved, and downloads those that are not. 
+##' Eventually, we would like automate this.
 ##'
 ##' @return NA (saves a CSV of the current data to the data directory)
 ##' 
@@ -73,20 +70,32 @@ pull_JHUCSSE_github_data <- function(){
   dates_ <- gsub("daily_case_updates/", "", data_files)
   dates_ <- gsub(".csv", "", dates_)
   dates_reformat_ <- as.POSIXct(dates_, format="%m-%d-%Y_%H%M")
+  dates_tocheck_ <- paste(month(dates_reformat_), day(dates_reformat_), year(dates_reformat_), sep="-")
   
-  # may add future functionality to choose a date to pull
-  # right now we just grab the latest one
-  file_name_ <- data_files[which.max(dates_reformat_)]   # file to pull
-  date_ <- max(dates_reformat_)     # date formatted for saving csv
-  date_ <- paste(month(date_), day(date_), year(date_), sep="-")
   
-  # Read in the file
-  url_ <- paste0("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/",file_name_)
-  case_data <- readr::read_csv(url(url_))
+  # Check which we have already
+  dir.create(file.path("data","case_counts"), recursive = TRUE, showWarnings = FALSE)
+  files_in_dir <- list.files(file.path("data","case_counts"))
+  files_in_dir_dates <- gsub("JHUCSSE Total Cases ", "", files_in_dir)
+  files_in_dir_dates <- gsub(".csv", "", files_in_dir_dates)
+  tmp <- which.max(mdy(files_in_dir_dates))
+  files_in_dir_dates <- files_in_dir_dates[-tmp]
   
-  # Save it
-  readr::write_csv(case_data, file.path("data", paste0("JHUCSSE Total Cases ", date_,".csv")))
+  # select list to download
+  data_files <- data_files[!(dates_tocheck_ %in% files_in_dir_dates)]
+  dates_tocheck_ <- dates_tocheck_[!(dates_tocheck_ %in% files_in_dir_dates)]
   
+  for (i in 1:length(data_files)){
+    file_name_ <- data_files[i]   # file to pull
+    date_ <- dates_tocheck_[i]     # date formatted for saving csv
+    
+    # Read in the file
+    url_ <- paste0("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/",file_name_)
+    case_data <- readr::read_csv(url(url_))
+    
+    # Save it
+    readr::write_csv(case_data, file.path("data", "case_counts", paste0("JHUCSSE Total Cases ", date_,".csv")))
+  }
 }
 
 
