@@ -8,41 +8,41 @@
 ##' 
 `%nin%` = Negate(`%in%`)
 
-moddata <- function(date, outsideChina = FALSE, ChinaOnly = FALSE, withHubei = TRUE, HubeiOnly = FALSE ){ 
-  
-  if(outsideChina == TRUE){
-    ChinaOnly <- FALSE
-    withHubei <- FALSE
-    HubeiOnly <- FALSE
-  }
+moddata <- function(date, withHubei = TRUE ){ # outsideChina = FALSE, ChinaOnly = FALSE, , HubeiOnly = FALSE
+  # 
+  # if(outsideChina == TRUE){
+  #   ChinaOnly <- FALSE
+  #   withHubei <- FALSE
+  #   HubeiOnly <- FALSE
+  # }
   #read in JHUCSSE data
   jhucsse <- read_JHUCSSE_cases(date, 
                                 append_wiki = TRUE) 
   
   ##Continue to filter to China for the moment (we can turn this off)
 
-  #jhucsse_china <- jhucsse %>% 
-   # filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
+  jhucsse_use <- jhucsse %>% 
+    filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
   
- jhucsse_use <- jhucsse
- 
- if(outsideChina == TRUE){
-   jhucsse_use <- jhucsse_use %>% 
-     filter(Country_Region%nin%c("Mainland China", "Macau", "Hong Kong")) 
- }
- 
- if(ChinaOnly == TRUE){
-   jhucsse_use <- jhucsse_use %>% 
-      filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
- }
-  
-  if(withHubei == FALSE){
-    jhucsse_use <- jhucsse_use %>% filter(Province_State != "Hubei")
-  }
-  
-  if(HubeiOnly == TRUE){
-    jhucsse_use <- jhucsse %>% filter(Province_State == "Hubei")
-  }
+ #jhucsse_use <- jhucsse
+ # 
+ # if(outsideChina == TRUE){
+ #   jhucsse_use <- jhucsse_use %>% 
+ #     filter(Country_Region%nin%c("Mainland China", "Macau", "Hong Kong")) 
+ # }
+ # 
+ # if(ChinaOnly == TRUE){
+ #   jhucsse_use <- jhucsse_use %>% 
+ #      filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
+ # }
+ #  
+ #  if(withHubei == FALSE){
+ #    jhucsse_use <- jhucsse_use %>% filter(Province_State != "Hubei")
+ #  }
+ #  
+ #  if(HubeiOnly == TRUE){
+ #    jhucsse_use <- jhucsse %>% filter(Province_State == "Hubei")
+ #  }
   
   
  jhucsse_use$Province_State <- as.factor(jhucsse_use$Province_State)
@@ -132,15 +132,15 @@ moddata <- function(date, outsideChina = FALSE, ChinaOnly = FALSE, withHubei = T
   w <- vector(length = ncol(cases))
   w[unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))] <- 1
   # 
-  # #omit hubei if desired
-  # if(withHubei == FALSE){
-  #   deaths <- deaths[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
-  #   recovered <- recovered[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
-  #   cases <- cases[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
-  #   w <- w[ -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
-  #   L <- length(w) #remake L if omitting hubei
-  # }
-  # 
+  #omit hubei if desired
+  if(withHubei == FALSE){
+    deaths <- deaths[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
+    recovered <- recovered[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
+    cases <- cases[, -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
+    w <- w[ -unlist(head(incidence_data[incidence_data$Province_State == "Hubei",  "loc"], n=1))]
+    L <- length(w) #remake L if omitting hubei
+  }
+
   V <- nrow(cases) #max infection duration
   
   #gather data into a list
