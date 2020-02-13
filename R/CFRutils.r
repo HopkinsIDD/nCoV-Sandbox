@@ -78,8 +78,8 @@ moddata <- function(date, withHubei = TRUE ){ # outsideChina = FALSE, ChinaOnly 
   #estimate daily recoveries
   recov_data <- est_daily_recovered(jhucsse_use,
                                     ISOdate(2019,12,1),
-                                    date)#,
-                                    #na_to_zeros = FALSE)
+                                    date,
+                                    na_to_zeros = TRUE)
   
   recov_data<-
     recov_data%>%filter(Date>"2020-1-1") %>%
