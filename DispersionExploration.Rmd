@@ -138,7 +138,7 @@ $R_e$ for the outbreak of COVID-19 in Wuhan.
 inf80_R2to3 <- dat %>% filter(Rvec>=2 & Rvec<=3) 
 inf80_Rp5to1 <- dat %>% filter(Rvec>=0.5 & Rvec<=1) 
 
-```
+``` 
 
 We find a range of possible values of over-dispersion consistent with the observed data at $R_e = 2$, as well as reduced mean $R_e$ values. We estimate that, if $R_e$ outside of China were between 2 and 3, as estimated within Wuhan, just 
 `r sprintf("%1.1f%% (range %1.1f, %1.1f )", mean(inf80_R2to3$p80)*100,  min(inf80_R2to3$p80)*100,  max(inf80_R2to3$p80)*100)` 

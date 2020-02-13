@@ -65,7 +65,7 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
                           full.names = TRUE)
 
   file_list <- rev(file_list)
-
+  
   ##Now combine them into one data frame
   rc <- NULL
 
@@ -74,7 +74,7 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
     tmp <- read_csv(file)%>%
       rename(Province_State=`Province/State`)%>%
       rename(Update = `Last Update`) %>%
-      mutate(Update=lubridate::parse_date_time(Update, c("%m/%d/%Y %I:%M %p", "%m/%d/%Y %H:%M", "%m/%d/%y %I:%M %p","%m/%d/%y %H:%M" )))
+      mutate(Update=lubridate::parse_date_time(Update, c("%m/%d/%Y %I:%M %p", "%m/%d/%Y %H:%M", "%m/%d/%y %I:%M %p","%m/%d/%y %H:%M", "%Y-%m-%d %H:%M:%S")))
 
     if("Country"%in%colnames(tmp)) {
       tmp <- rename(tmp, Country_Region=Country)
@@ -88,7 +88,8 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
 
     rc <-bind_rows(rc,tmp)
   }
-
+  
+  
   ##Now drop any after the date given
   rc <- rc%>%filter(Update<=last_time) %>%
     mutate(Country_Region=replace(Country_Region, Country_Region=="China", "Mainland China")) %>%
