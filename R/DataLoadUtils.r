@@ -48,6 +48,53 @@ readKudos <- function (filename) {
     return(rc)
 }
 
+
+
+##'
+##' Pulls the JHUCSSE total case count data up
+##' until (and including) a given date from github. This will be automated.
+##'
+##' @param last_time the last time to consider data from
+##' @param append_wiki sjpi;d we also append data from wikipedia.
+##'
+##' @return NA (saves a CSV of the current data to the data directory)
+##' 
+pull_JHUCSSE_github_data <- function(){
+  
+  require(tidyverse)
+  require(httr)
+  require(lubridate)
+  
+  # First get a list of files so we can get the latest one
+  req <- GET("https://api.github.com/repos/CSSEGISandData/COVID-19/git/trees/master?recursive=1")
+  stop_for_status(req)
+  filelist <- unlist(lapply(content(req)$tree, "[", "path"), use.names = F)
+  data_files <- grep(".csv", grep("daily_case_updates/", filelist, value=TRUE), value=TRUE)
+  dates_ <- gsub("daily_case_updates/", "", data_files)
+  dates_ <- gsub(".csv", "", dates_)
+  dates_reformat_ <- as.POSIXct(dates_, format="%m-%d-%Y_%H%M")
+  
+  # may add future functionality to choose a date to pull
+  # right now we just grab the latest one
+  file_name_ <- data_files[which.max(dates_reformat_)]   # file to pull
+  date_ <- max(dates_reformat_)     # date formatted for saving csv
+  date_ <- paste(month(date_), day(date_), year(date_), sep="-")
+  
+  # Read in the file
+  url_ <- paste0("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/",file_name_)
+  case_data <- readr::read_csv(url(url_))
+  
+  # Save it
+  readr::write_csv(case_data, file.path("data", paste0("JHUCSSE Total Cases ", date_,".csv")))
+  
+}
+
+
+
+
+
+
+
 ##'
 ##' Reads in the JHUCSSE total case count data up
 ##' until (and including) a given dat.
