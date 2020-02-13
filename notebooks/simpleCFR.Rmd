@@ -199,20 +199,22 @@ Prep data
 library(readr)
 library(tidyverse)
    #Load in the JHU CSSE Data
-todaydate <- ISOdate(2020,2,11, hour = 00, min = 23, tz = "UTC")
+todaydate <- ISOdate(2020,2,13, hour = 00, min = 54, tz = "UTC")
 #note, weird stuff going on with the dates. so i took the max time in the newest file and inserted here, which fixed.
+date <- todaydate
+
+#mod2_nohubei <- moddata(todaydate, outsideChina = FALSE, ChinaOnly = TRUE, withHubei = FALSE, HubeiOnly = FALSE)
+mod2_all <- moddata(todaydate, withHubei = TRUE)
+#mod2_hubei <- moddata(todaydate, outsideChina = FALSE, ChinaOnly = TRUE, withHubei = TRUE, HubeiOnly = TRUE)
+#mod2_nochina <- moddata(todaydate, outsideChina = TRUE)
 
 
-mod2_nohubei <- moddata(todaydate, outsideChina = FALSE, ChinaOnly = TRUE, withHubei = FALSE, HubeiOnly = FALSE)
-mod2_all <- moddata(todaydate, ChinaOnly = TRUE, withHubei = TRUE, HubeiOnly = FALSE)
-mod2_hubei <- moddata(todaydate, outsideChina = FALSE, ChinaOnly = TRUE, withHubei = TRUE, HubeiOnly = TRUE)
-mod2_nochina <- moddata(todaydate, outsideChina = TRUE)
 ```
 
 ## Run models
 
 ```{r, eval = FALSE}
-  cfrmdl_je_res <- sampling(cfrmdl2, data=mod2_hubei,
+  cfrmdl_je_res <- sampling(cfrmdl2, data=mod2_all,
                          iter=3000)
   chains <- extract(cfrmdl_je_res)
   lambda1 <- chains$lambda1
