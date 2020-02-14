@@ -48,6 +48,62 @@ readKudos <- function (filename) {
     return(rc)
 }
 
+
+##'
+##' Pulls the JHUCSSE total case count data up to current date from github.
+##' This version checks what is already saved, and downloads those that are not. 
+##' Eventually, we would like automate this.
+##'
+##' @return NA (saves a CSV of the current data to the data directory)
+##' 
+pull_JHUCSSE_github_data <- function(){
+  
+  require(tidyverse)
+  require(httr)
+  require(lubridate)
+  
+  # First get a list of files so we can get the latest one
+  req <- GET("https://api.github.com/repos/CSSEGISandData/COVID-19/git/trees/master?recursive=1")
+  stop_for_status(req)
+  filelist <- unlist(lapply(content(req)$tree, "[", "path"), use.names = F)
+  data_files <- grep(".csv", grep("daily_case_updates/", filelist, value=TRUE), value=TRUE)
+  dates_ <- gsub("daily_case_updates/", "", data_files)
+  dates_ <- gsub(".csv", "", dates_)
+  dates_reformat_ <- as.POSIXct(dates_, format="%m-%d-%Y_%H%M")
+  dates_tocheck_ <- paste(month(dates_reformat_), day(dates_reformat_), year(dates_reformat_), sep="-")
+  
+  
+  # Check which we have already
+  #dir.create(file.path("data"), recursive = TRUE, showWarnings = FALSE)
+  files_in_dir <- list.files("data", "JHUCSSE Total Cases")
+  files_in_dir_dates <- gsub("JHUCSSE Total Cases ", "", files_in_dir)
+  files_in_dir_dates <- gsub(".csv", "", files_in_dir_dates)
+  tmp <- which.max(mdy(files_in_dir_dates))
+  files_in_dir_dates <- files_in_dir_dates[-tmp]
+  
+  # select list to download
+  data_files <- data_files[!(dates_tocheck_ %in% files_in_dir_dates)]
+  dates_tocheck_ <- dates_tocheck_[!(dates_tocheck_ %in% files_in_dir_dates)]
+  
+  for (i in 1:length(data_files)){
+    file_name_ <- data_files[i]   # file to pull
+    date_ <- dates_tocheck_[i]     # date formatted for saving csv
+    
+    # Read in the file
+    url_ <- paste0("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/",file_name_)
+    case_data <- readr::read_csv(url(url_))
+    
+    # Save it
+    readr::write_csv(case_data, file.path("data", paste0("JHUCSSE Total Cases ", date_,".csv")))
+  }
+}
+
+
+
+
+
+
+
 ##'
 ##' Reads in the JHUCSSE total case count data up
 ##' until (and including) a given dat.
