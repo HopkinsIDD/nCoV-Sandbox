@@ -1,0 +1,351 @@
+---
+title: "nCoV 2019 Sandbox"
+output:
+  html_document:
+    df_print: paged
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+#Preamble
+require(knitr)
+require(tidyverse)
+require(gridExtra)
+require(rstan)
+
+source("R/DataLoadUtils.r")
+source("R/BasicEpiAnalyses.r")
+```
+
+
+
+## Reconstructing Past Incidence Using Cumulative Reports (1-28-2020)
+
+Goal is to do a better job of recreating the daily case counts
+in each area so we have implied epidemic curves to work with for
+some of the more sophisticated stuff (hopefully) to come. 
+
+First let's load in the data. Currently using only
+confirmed cases (driven a bit by data source),
+but unclear how long this will be viable.
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+# Run this part to update the data pulled from github
+pull_JHUCSSE_github_data()
+
+```
+
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+  
+   #Load in the JHU CSSE Data
+   jhucsse <- read_JHUCSSE_cases("2020-02-16 23:59", 
+                                 append_wiki = TRUE)
+  
+  ##Continue to filter to China for the moment.
+  ##also total the suspected and confirmed cases.
+  jhucsse_china <- jhucsse %>% 
+    filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
+  
+  
+  
+   
+  ## Fit a monotinically increasing spline to each area with
+  ## at least 25 cases at any point
+  tmp <- jhucsse_china%>%filter(Confirmed>=25)
+  tmp <- unique(tmp$Province_State)
+    
+  ## Look at consitencey in exponential groqth by areas.
+  analyze <-   jhucsse_china %>% drop_na(Confirmed) %>% 
+     filter(Province_State%in%tmp)
+   
+  
+  ##Get the implied daily incidence for each province
+  ##by fitting a monitonically increasing spline and then 
+  ##taking the difference (a little less sensitive to 
+  ##perturbations in reporting than taking raw difference).
+  ##Making sure only to infer over trhe suport
+  tmp_dt_seq <- seq(ISOdate(2019,12,1), ISOdate(2020,2,14), "days")
+  incidence_data<- analyze %>% nest(-Province_State) %>%
+      mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Confirmed,
+                                       method="hyman"))) %>%
+    mutate(Incidence=map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)], 
+                                         Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
+      unnest(Incidence) %>% select(-data) %>% select(-cs) 
+  
+inc_plt <- incidence_data%>%filter(Date>"2020-1-1") %>% 
+  ggplot(aes(x=Date,   y=Incidence, fill=Province_State)) +
+  geom_bar(stat="identity", position="stack") +
+  theme_bw()+theme(legend.position="bottom")
+  
+
+inc_plt
+
+
+## Now let's look at Hubei a little bit to see how we feel about
+##this approach. Compare with just looking at raw differences.
+
+jhucsse_hubei <-jhucsse %>% 
+  filter(Province_State=="Hubei") %>% 
+  filter(Update>="2020-01-22")
+
+compare_points <- data.frame(Date=sort(jhucsse_hubei$Update[-1]),
+                      Incidence=diff(sort(jhucsse_hubei$Confirmed)))
+
+incidence_data%>%filter(Date>"2020-1-1") %>% 
+  filter(Province_State=="Hubei") %>% 
+  ggplot(aes(x=Date,   y=Incidence))+
+  geom_bar(stat="identity", position="stack") +
+  theme_bw() + 
+  coord_cartesian(ylim = c(0, max(compare_points$Incidence))) +
+  geom_point(data=compare_points,
+             x=round(compare_points$Date,"day")+
+               as.difftime(12,unit="hours"), 
+             y=compare_points$Incidence, color="green")
+
+```
+
+Things looks a little funny prior to the first, but this
+does seem like it should give a rough pseudo epidemic curve for
+the purpose of anlaysis.
+
+
+## Incidenced Redistribution
+
+Because of the change in case definition, 
+we are going to run a redistribution procedure to recontruct the incidence data
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+  
+  options(scipen = 999)
+
+  # plotting Hubei cases and fits
+  plot_hubei_incid <- function(){
+    jhucsse_hubei <- jhucsse %>% filter(Province_State=="Hubei") %>% filter(Update>=as.Date("2020-01-22"))
+    
+    compare_points <- data.frame(Date=sort(jhucsse_hubei$Update[-1]),
+                                 Incidence=diff(sort(jhucsse_hubei$Confirmed)))
+    
+    incidence_data %>% filter(Date>"2020-1-1") %>% 
+      filter(Province_State=="Hubei") %>% 
+      ggplot(aes(x=Date,   y=Incidence))+
+      geom_bar(stat="identity", position="stack") +
+      theme_bw() + 
+      coord_cartesian(ylim = c(0, max(compare_points$Incidence))) +
+      geom_point(data=compare_points,
+                 x=round(compare_points$Date,"day")+
+                   as.difftime(12,unit="hours"), 
+                 y=compare_points$Incidence, color="green")
+  }
+  
+    # plotting Hubei cases and fits
+  plot_hubei_incid_rev <- function(){
+    jhucsse_hubei <- jhucsse %>% filter(Province_State=="Hubei") %>% filter(Update>=as.Date("2020-01-22"))
+    
+    compare_points <- data.frame(Date=sort(jhucsse_hubei$Update[-1]),
+                                 Incidence=diff(sort(jhucsse_hubei$Confirmed)))
+    
+    incidence_data %>% filter(Date>"2020-1-1") %>% 
+      filter(Province_State=="Hubei") %>% 
+      ggplot(aes(x=Date,   y=Incidence))+
+      geom_bar(stat="identity", position="stack") +
+      theme_bw() + 
+      coord_cartesian(ylim = c(0, max(compare_points$Incidence))) +
+      geom_point(data=compare_points,
+                 x=round(compare_points$Date,"day")+
+                   as.difftime(12,unit="hours"), 
+                 y=compare_points$Incidence, color="green") +
+      geom_point(data=analyze2,
+                 x=analyze2$Update,
+                 y=analyze2$Incidence, color="blue")
+    
+  }
+
+    # plot_hubei_cum_rev <- function(){
+    #   
+    #   compare_points <- jhucsse %>% filter(Province_State=="Hubei") %>% filter(Update>=as.Date("2020-01-22")) %>%
+    #     select(Date = Update, CumIncid=Confirmed) %>% arrange(as.Date(Date)) %>%
+    #     mutate(Date = as.Date(round(Date,"day") + as.difftime(12,unit="hours")))
+    #   
+    #   incidence_data <- incidence_data %>% filter(Province_State=="Hubei") %>% 
+    #     filter(as.Date(Date)>"2020-1-1") %>% arrange(as.Date(Date)) %>% 
+    #     mutate(CumIncid = cumsum(Incidence))
+    #   
+    #   ggplot()+
+    #     geom_bar(data=incidence_data %>% as_ti(), aes(x=Date, y=CumIncid), stat="identity", position="stack") +
+    #     theme_bw() + 
+    #     #coord_cartesian(ylim = c(0, max(compare_points$Incidence))) +
+    #     geom_point(data=compare_points, aes(x=Date, y=CumIncid), color="green") +
+    #     geom_point(data=analyze2,
+    #                x=analyze2$Update,
+    #                y=analyze2$Incidence, color="blue")
+    #   
+    # }
+
+
+   #Load in the JHU CSSE Data
+   jhucsse <- read_JHUCSSE_cases("2020-02-14 23:59", 
+                                 append_wiki = TRUE)
+  
+  ##Continue to filter to China for the moment.
+  ##also total the suspected and confirmed cases.
+  jhucsse_china <- jhucsse %>% 
+    filter(Country_Region%in%c("Mainland China", "Macau", "Hong Kong")) 
+  
+   
+  ## Fit a monotinically increasing spline to each area with
+  ## at least 25 cases at any point
+  tmp <- jhucsse_china%>%filter(Confirmed>=25)
+  tmp <- unique(tmp$Province_State)
+    
+  ## Look at consitencey in exponential groqth by areas.
+  analyze <-   jhucsse_china %>% drop_na(Confirmed) %>% 
+     filter(Province_State%in%tmp)
+   
+  #View(analyze %>% filter(Province_State=="Hubei"))
+  
+  # ## To fit to and smooth incidence, we will have to get daily incidence counts 
+  # ## and then smooth (not just smooth cumulative)
+  # ## To do this, we have to take only a single observation for each day. 
+  # ## We will take the update closest to the middle of the day
+  # 
+  # analyze <- analyze %>% mutate(Update_day = as.Date(Update), Update_time = hms::as_hms(Update)) %>%
+  #   mutate(time_from_noon = abs(hms::as_hms(12:00:00) - Update_time)) %>%
+  #   group_by(Province_State, Update_day) %>% add_tally()
+  
+  ##Get the implied daily incidence for each province
+  ##by fitting a monitonically increasing spline and then 
+  ##taking the difference (a little less sensitive to 
+  ##perturbations in reporting than taking raw difference).
+  ##Making sure only to infer over the suport
+  
+  
+  # (1)  Exclude cumulative counts on Feb 13
+  
+  # We just need to do this for Hubei 
+  analyze <- jhucsse_china %>% drop_na(Confirmed) %>% filter(Province_State=="Hubei")
+  # get temporary incidence
+  analyze <- analyze %>% arrange(Update) %>% group_by(Province_State) %>% mutate(incid_tmp = diff(c(0,Confirmed)) ) %>% ungroup()
+  # use temp incid to adjust cum incid beyond Feb 13
+  feb13_incid <- (analyze %>% filter(Province_State=="Hubei" & as.Date(Update)==as.Date("2020-02-13")))$incid_tmp
+  analyze <- analyze %>% mutate(Confirmed_rev = ifelse((Province_State=="Hubei" & as.Date(Update)>=as.Date("2020-02-13")), 
+                                                   Confirmed - feb13_incid, 
+                                                   Confirmed))
+  analyze2 <- analyze %>% filter(!(Province_State=="Hubei" & as.Date(Update)==as.Date("2020-02-13"))) # Remove Feb 13
+  
+  # Current total cases:
+  print(paste0("Current cumulative cases: ", max(analyze$Confirmed)))
+
+  
+  
+  # (2) Fit spline to current cumulative data, with data excluding Feb 13
+  
+  tmp_dt_seq <- seq(ISOdate(2019,12,1), ISOdate(2020,2,14), "days")
+
+  incidence_data<- analyze2 %>% nest(-Province_State)  %>%
+    mutate(cs=map(data, 
+                  ~splinefun(x=.$Update, y=.$Confirmed_rev, method="hyman"))) %>%
+    mutate(Incidence=map2(cs, data, 
+            ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)], 
+                        Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
+    unnest(Incidence) %>% select(-data) %>% select(-cs) 
+  
+  # Check the total incidence -- should be less than 52,000 (need to add feb 13 to it)
+  sum(incidence_data$Incidence)
+  # Plot to check
+  plot_hubei_incid()
+  
+  
+  # (3) Compare reported Feb 13 to est Feb 13
+  
+  diff_feb13 <- feb13_incid - (incidence_data %>% filter(Province_State=="Hubei" & as.Date(Date)==as.Date("2020-02-13")))$Incidence
+  
+  
+  # (4) Redistribute excess cases back in time, proportional to cases on those dates
+  
+  # Redistribute in the past
+  incid_inds <- incidence_data$Date < as.Date("2020-02-13")
+  incid_to_feb12 <- incidence_data$Incidence[incid_inds]
+  incid_redistrib <- incid_to_feb12 / (sum(incid_to_feb12)) * diff_feb13
+  incidence_data$Incidence[incid_inds] <- incidence_data$Incidence[incid_inds] + incid_redistrib
+  
+  
+  
+  # make sure all the future cases are still same as data
+  incid_inds <- incidence_data$Date >= as.Date("2020-02-14")
+  incid_to_feb12 <- incidence_data$Incidence[incid_inds]
+  incid_redistrib <- incid_to_feb12 / (sum(incid_to_feb12)) * diff_feb13
+  incidence_data$Incidence[incid_inds] <- incidence_data$Incidence[incid_inds] + incid_redistrib
+  
+  # Check the total incidence -- should be ~52,000
+  sum(incidence_data$Incidence)
+  
+  
+  
+  
+  # (5) Fit splines again
+  
+  # Get cumulative to fit splines to again  
+  analyze2 <- incidence_data %>% filter(!(Province_State=="Hubei" & as.Date(Date)==as.Date("2020-02-13"))) %>% # Remove Feb 13
+    group_by(Province_State) %>% mutate(Confirmed_rev = cumsum(Incidence)) %>% ungroup() %>%
+    rename(Update = Date)
+
+  incidence_data<- analyze2 %>% nest(-Province_State)  %>%
+    mutate(cs=map(data, 
+                  ~splinefun(x=.$Update, y=.$Confirmed_rev, method="hyman"))) %>%
+    mutate(Incidence=map2(cs, data, 
+                          ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)], 
+                                      Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
+    unnest(Incidence) %>% select(-data) %>% select(-cs) 
+  
+  # Check the total incidence -- should be <52,000
+  sum(incidence_data$Incidence)
+  
+  # Plot to check
+  plot_hubei_incid_rev()
+  
+  
+  
+  
+  
+  
+  
+  inc_plt <- incidence_data %>% filter(Date>as.Date("2020-1-1")) %>% 
+    ggplot(aes(x=Date,   y=Incidence, fill=Province_State)) +
+    geom_bar(stat="identity", position="stack") +
+    theme_bw()+theme(legend.position="bottom")
+  inc_plt
+  
+  
+  
+  
+  
+  # OLD -- DONT NEED TO DO THIS FOR EVERY PROVINCE
+  # # (1)  Exclude cumulative counts on Feb 13
+  # 
+  # # get temporary incidence
+  # analyze <- analyze %>% arrange(Update) %>% group_by(Province_State) %>% mutate(incid_tmp = diff(c(0,Confirmed)) )
+  # # use temp incid to adjust cum incid beyond Feb 13
+  # feb13_incid <- (analyze %>% filter(Province_State=="Hubei" & as.Date(Update)==as.Date("2020-02-13")))$incid_tmp
+  # analyze <- analyze %>% mutate(Confirmed_rev = ifelse((Province_State=="Hubei" & as.Date(Update)>=as.Date("2020-02-13")), 
+  #                                                  Confirmed - feb13_incid, 
+  #                                                  Confirmed))
+  # analyze2 <- analyze %>% filter(!(Province_State=="Hubei" & as.Date(Update)==as.Date("2020-02-13"))) # Remove Feb 13
+  # 
+  # 
+  # # (2) Fit spline to current cumulative data, with data excluding Feb 13
+  # 
+  # tmp_dt_seq <- seq(ISOdate(2019,12,1), ISOdate(2020,2,14), "days")
+  # 
+  # incidence_data<- analyze2 %>% nest(-Province_State)  %>%
+  #   mutate(cs=map(data, ~splinefun(x=.$Update, y=.$Confirmed_rev, method="hyman"))) %>%
+  #   mutate(Incidence=map2(cs, data, 
+  #           ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)], 
+  #                       Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
+  #   unnest(Incidence) %>% select(-data) %>% select(-cs) 
+  # 
+  # 
+  
+```
+
