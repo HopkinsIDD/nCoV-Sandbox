@@ -74,8 +74,8 @@ pull_JHUCSSE_github_data <- function(){
   
   
   # Check which we have already
-  dir.create(file.path("data","case_counts"), recursive = TRUE, showWarnings = FALSE)
-  files_in_dir <- list.files(file.path("data","case_counts"))
+  #dir.create(file.path("data"), recursive = TRUE, showWarnings = FALSE)
+  files_in_dir <- list.files("data", "JHUCSSE Total Cases")
   files_in_dir_dates <- gsub("JHUCSSE Total Cases ", "", files_in_dir)
   files_in_dir_dates <- gsub(".csv", "", files_in_dir_dates)
   tmp <- which.max(mdy(files_in_dir_dates))
@@ -94,7 +94,7 @@ pull_JHUCSSE_github_data <- function(){
     case_data <- readr::read_csv(url(url_))
     
     # Save it
-    readr::write_csv(case_data, file.path("data", "case_counts", paste0("JHUCSSE Total Cases ", date_,".csv")))
+    readr::write_csv(case_data, file.path("data", paste0("JHUCSSE Total Cases ", date_,".csv")))
   }
 }
 
