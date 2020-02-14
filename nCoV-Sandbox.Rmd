@@ -161,12 +161,6 @@ First let's load in the data. Currently using only
 confirmed cases (driven a bit by data source),
 but unclear how long this will be viable.
 
-```{r, message=FALSE, echo=FALSE, warning=FALSE}
-# Run this part to update the data pulled from github
-pull_JHUCSSE_github_data()
-
-```
-
 
 
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
