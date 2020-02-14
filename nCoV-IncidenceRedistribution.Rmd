@@ -1,5 +1,5 @@
 ---
-title: "nCoV 2019 Sandbox"
+title: "COVID-19 Incidence Redistribution"
 output:
   html_document:
     df_print: paged
@@ -21,6 +21,7 @@ source("R/BasicEpiAnalyses.r")
 
 
 ## Reconstructing Past Incidence Using Cumulative Reports (1-28-2020)
+** This is the original methdo **
 
 Goal is to do a better job of recreating the daily case counts
 in each area so we have implied epidemic curves to work with for
@@ -111,10 +112,11 @@ does seem like it should give a rough pseudo epidemic curve for
 the purpose of anlaysis.
 
 
+
 ## Incidenced Redistribution
 
-Because of the change in case definition, 
-we are going to run a redistribution procedure to recontruct the incidence data
+Because of the change in case definition on February 13, 2020
+we are going to run a redistribution procedure to recontruct the incidence data.
 
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
   
