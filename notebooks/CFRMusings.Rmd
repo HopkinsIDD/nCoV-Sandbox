@@ -73,25 +73,34 @@ model {
 
 Prep data. 
 
-```{r, warning=FALSE, message=FALSE}
+```{r, warning=, message=FALSE}
 
    #Load in the JHU CSSE Data
-   jhucsse <- read_JHUCSSE_cases("2020-02-14 23:59", 
+   jhucsse <- read_JHUCSSE_cases("2020-02-15 23:59", 
                                  append_wiki = TRUE)
   
   ##Filter to countries with at least
-  jhucsse <- jhucsse %>% 
-    filter(Country_Region%in%
-             c("Mainland China", "Macau", "Hong Kong")) 
+  #jhucsse <- jhucsse %>% 
+  #  filter(Country_Region%in%
+  #           c("Mainland China", "Macau", "Hong Kong")) 
   
   jhucsse$Province_State <- as.factor(jhucsse$Province_State)
   
     
   incidence_data <- est_daily_incidence(jhucsse,
                                   ISOdate(2019,12,1),
-                                  ISOdate(2020,2,13))
+                                  ISOdate(2020,2,14))
+  
+  
+  ## Correct for the change in reportin on the 13th
+  corrected_hubei <- correct_for_Hubei_reporting(jhucsse,
+                                                 ISOdate(2019,12,1),
+                                                 ISOdate(2020,2,14))
+  
+  ##Replace incdience stuff with corrected hubei data.
+  incidence_data[incidence_data$Province_State=="Hubei",] <- corrected_hubei
          
-   #look at this before we do it.
+  ##look at this before we do it.
   inc_plt <- incidence_data%>%filter(Date>"2020-1-1") %>% 
     ggplot(aes(x=Date,  y=Incidence, fill=Province_State)) +
     geom_bar(stat="identity", position="stack") +
@@ -277,7 +286,7 @@ disctribution.
 
 
 ```{stan, eval = FALSE, output.var="cfrmdl_erlang"}
-
+//Really not properly erlang...need to think about what this means...
 data {
   int <lower=0> T; //the number of time steps included
   int <lower=0> L; //the number of locations we have data from
@@ -291,33 +300,59 @@ data {
 parameters {
   real <lower=0, upper=1> lambda1[N]; //death rate per compartment
   real <lower=0, upper=1> lambda2[N]; //recovery rate per compartment
-  real <lower=0, upper=1> alpha; //rate of movement between compartments.
+  real <lower=0, upper=1> alpha; //rate of movement between compartments .
   real <lower= 0, upper=1> dr; // wuhan detect rate
 }
 
 transformed parameters {
   real <lower=0> expected_deaths[T,L]; //  # deaths at time T
   real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
-  real <lower=0> expected_riskset[T,L,N]; // expected people in each of the risk sets at each time.
+  real <lower=0> expected_riskset[T,L,N]; // expected people in each compartment at eahc time.
 
 for (j in 1:L) {
+    //initialize the 
     expected_riskset[1,j,1] = c[1,j];
-    expected_deaths[1,j] = expected_riskset[1,j,1] * lambda1 + 0.0001 ;
+    expected_deaths[1,j] = expected_riskset[1,j,1] * lambda1[1] + 0.0001 ;
     expected_recovereds[1,j] = expected_riskset[1,j,1] *
-        lambda2 * (dr)^w[j] + 0.0001;
+        lambda2[1] * (dr)^w[j] + 0.0001;
     
+    //Initialize the riskset i ther compartments to 0 if they exist.
     if(N>1) {
       for (i in 2:N) {
-        expected_recovereds[1,j,i] = 0;
+        expected_riskset[1,j,i] = 0;
       }
     }
  
     for (t in 2:T) {
-       expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
-                                expected_deaths[t-1,j] - expected_riskset[t-1,j] * (lambda - lambda1);
-                            
-      expected_deaths[t,j] = expected_riskset[t,j] * lambda1 + 0.0001 ;
-      expected_recovereds[t,j] = expected_riskset[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+       //Move deaths and recoveries from last timestep out of first compartment.
+       expected_riskset[t,j,1] =  expected_riskset[t-1,j,1] + c[t,j] - 
+                                  expected_riskset[t-1,j,1] * lambda1[1] - 
+                                  expected_riskset[t-1,j,1] * lambda2[1];
+                                
+      if(N>1) {
+        for (i in 2:N) {
+          //remove the alpha from the expected risk set i-1
+          expected_riskset[t,j,i-1] -= alpha *expected_riskset[t-1,j,i-1];
+          
+          expected_riskset[t,j,i] =  expected_riskset[t-1,j,i] +
+                                     alpha *expected_riskset[t-1,j,i-1] -
+                                     expected_riskset[t-1,j,i] * lambda1[i]-
+                                     expected_riskset[t-1,j,i] * lambda2[i];
+        }
+      }                            
+      
+      //Accumulate deaths and recovereds                      
+      expected_deaths[t,j] = expected_riskset[t,j,1] * lambda1[1] + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[t,j,1] * 
+              lambda2[1] * (dr)^w[j] + 0.0001;
+              
+      if(N>1) {
+        for (i in 2:N) {
+          expected_deaths[t,j] += expected_riskset[t,j,i] * lambda1[i];
+          expected_recovereds[t,j] += expected_riskset[t,j,i] * 
+                lambda2[i] * (dr)^w[j] + 0.0001;
+        }
+      }
       
     }
   }
@@ -328,7 +363,8 @@ model {
   //definitely can be made more effcient.
   for (j in 1:L) {
     for (t in 1:T) {
-      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) +
+            poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
     }
   }
  
@@ -336,3 +372,66 @@ model {
 
 ```
 
+```{r, eval=FALSE}
+  cfrmdl_erlang_data <- cfrmdl_CH_data
+  cfrmdl_erlang_data$N <- 3 #Set the number of compartments
+  cfrmdl_erlang_res <- sampling(cfrmdl_erlang, data=cfrmdl_erlang_data,
+                         iter=2000)
+
+```
+
+```{r}
+##Translate this into estimates of the CFR, rho/
+
+###CURRENTLY ONLY WORKS FOR THE SINGLE N CASE
+N <- cfrmdl_erlang_data$N
+
+##' Param 1 is alpha.
+##' Param 2:(N+1) are lambda 1s
+##' State N+1 is dead, state N+2 is recovered
+dx.dt <- function (t, state, param) {
+  rc <- vector(length=N+2)
+  rc[N+1] <- 0
+  rc[N+2] <- 0
+  
+  for (i in 1:N) {
+    ##add from last state if not 1
+     rc[i] <- ifelse(i>1, state[i-1]*param[1], 0) 
+     ## Take out deaths and recoverds
+     rc[i] <- rc[i] - (param[i+1] + param[N+i+1])*state[i]
+     ##Move to next state if not N
+     if (i<N) {rc[i] <- rc[i]-param[1]*state[i]}
+     ##Decrement deaths and revoverds
+     rc[N+1] <- rc[N+1] + param[i+1]*state[i]
+     rc[N+2] <- rc[N+2] + param[N+i+1]*state[i]
+  }
+  
+  return(list(rc))
+}
+
+
+require(deSolve)
+
+solve_deaths <- function(alpha, lambda1s, lambda2s) {
+  res <- ode(c(1, rep(0, N+1)), #initial state for N compartments plus death/recovery
+             c(1,1000), #just need intial values and at T large
+             dx.dt, #function
+             c(alpha, lambda1s, lambda2s)
+           )
+
+  return(res[2,N+2]) #should be deaths
+}
+
+chains <- extract(cfrmdl_erlang_res)
+rho_erlang <- vector(length=length(chains$alpha))
+
+lambda1 <- as.matrix(chains$lambda1)
+lambda2 <- as.matrix(chains$lambda2)
+for(i in 1:length(chains$alpha)){
+  rho_erlang[i] <- solve_deaths(chains$alpha[i], lambda1[i,], lambda2[i,])
+}
+
+
+median(rho_erlang)
+quantile(rho_erlang, probs = c(.025, .975))
+```

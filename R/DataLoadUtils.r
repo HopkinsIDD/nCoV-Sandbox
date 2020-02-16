@@ -126,7 +126,7 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
   rc <- NULL
 
   for (file in file_list) {
-    #print(file)
+    print(file)
     tmp <- read_csv(file)%>%
       rename(Province_State=`Province/State`)%>%
       rename(Update = `Last Update`) %>%
