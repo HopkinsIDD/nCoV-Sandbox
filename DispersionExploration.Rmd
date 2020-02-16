@@ -20,6 +20,8 @@ author:
 
 ```
 
+**NOTE (2020-15-2):** Update at bottom based on numbers
+as of February 15 2020.
 
 Despite introductions of the novel coronavirus into 27 countries, as of February 11, 2020, there has been little documented onward transmission outside of China. At the start of the outbreak, the basic reproductive number, $R_0$, was estimated to be somewhere between 2 and 3 in Wuhan. That is, early growth features of the outbreak indicate that, on average, one infected individual infects between 2 and 3 other individuals. However, this same rate of epidemic growth has not been observed outside of China (and perhaps even in other provinces within China) despite numerous introductions. 
 
@@ -51,7 +53,7 @@ tmp.dat <- sim_data(nreps, country.dat$total.cases, country.dat$cases.outside)
 
 #### Dispersion parameter estimation
 
-We then find the optimal dispersion paramater, $\theta$, that best makes each assumed simulated data set consistent with a random value of $R_e$ drawn from a plausible range (0.1 - 3). Individual variation in infectiousness implies outbreaks are rarer but more explosive. Interpreting the $\theta$ parameter is eased by framing it in terms of the fraction of individuals responsible for 80\% of onwards transmission (by analogy with [the 20/80 rule](https://www.pnas.org/content/94/1/338)). 
+We then find the optimal dispersion parameter, $\theta$, that best makes each assumed simulated data set consistent with a random value of $R_e$ drawn from a plausible range (0.1 - 3). Individual variation in infectiousness implies outbreaks are rarer but more explosive. Interpreting the $\theta$ parameter is eased by framing it in terms of the fraction of individuals responsible for 80\% of onward transmission (by analogy with [the 20/80 rule](https://www.pnas.org/content/94/1/338)). 
 
 Key functions used in the analysis:
 
@@ -86,46 +88,55 @@ getPropInfected <- Vectorize(function(Re,theta,target.prop=0.80) {
 ```{r echo=FALSE, fig.height=6, fig.width=5, message=FALSE, warning=FALSE, fig.align="center"}
 
 # fitting to simulated data
-
-# theta MLE for each pair of simulated data + randomly drawn Re
-Rvec <- runif(nreps, 0.1, 3)
-
-tmp <- vector(length=nreps)
-tmp_sars <- vector(length=nreps)
-tmp_R2 <- vector(length=nreps)
-for(i in 1:nreps){
-  tmp[i] <- do_optim(Rvec[i], data = tmp.dat[,i]) #optimal theta for random R
-  tmp_R2[i] < do_optim(2, data=tmp.dat[,i]) # optimal theta for R=2
+#Now wrappering in  functions. First generate data
+make_dat <- function(nreps, tmp.dat) {
+  # theta MLE for each pair of simulated data + randomly drawn Re
+  Rvec <- runif(nreps, 0.1, 3)
+  
+  tmp <- vector(length=nreps)
+  tmp_sars <- vector(length=nreps)
+  tmp_R2 <- vector(length=nreps)
+  for(i in 1:nreps){
+    tmp[i] <- do_optim(Rvec[i], data = tmp.dat[,i]) #optimal theta for random R
+    tmp_R2[i] < do_optim(2, data=tmp.dat[,i]) # optimal theta for R=2
+  }
+  
+  dat <- data.frame(Rvec, 
+                    theta = tmp, 
+                    p80 = getPropInfected(Rvec, tmp))
+  return(dat)
+  
 }
 
-dat <- data.frame(Rvec, 
-                  theta = tmp, 
-                  p80 = getPropInfected(Rvec, tmp))
+dat<-make_dat(nreps, tmp.dat)
+  
+make_figs <- function(dat) {
+  p1 <- ggplot(dat%>%mutate(theta=ifelse(theta>10,10, theta)) , aes(x=Rvec, y=theta)) +
+    geom_point(col='steelblue2', alpha=0.1) +
+    geom_smooth(col='black') +
+    scale_x_log10() +
+    scale_y_log10() +
+    theme_bw() + 
+    geom_hline(yintercept = .16, lty=2, color="red" ) +
+    geom_rect(data=dat[1,], aes(xmin=2,xmax=3, ymin=0.01, ymax=10),fill="black", alpha=.2) +
+    xlab(expression(R[e])) +
+    ylab(expression(theta))
+  
+  
+  p2 <- ggplot(dat, aes(x=Rvec, y=p80)) +
+    geom_point(col='steelblue2', alpha=0.1) +
+    geom_smooth(col='black') +
+    scale_x_log10() +
+    scale_y_log10() + theme_bw() +
+    geom_rect(data=dat[1,], aes(xmin=2,xmax=3, ymin=0.001, ymax=0.2),fill="black", alpha=.2) +
+    ylab("Proportion infecting 80%") +
+    xlab(expression(R[e]))
+  
+  return(grid.arrange(p1, p2,
+                      ncol=1))
+}
 
-
-p1 <- ggplot(dat%>%mutate(theta=ifelse(theta>10,10, theta)) , aes(x=Rvec, y=theta)) +
-        geom_point(col='steelblue2', alpha=0.1) +
-        geom_smooth(col='black') +
-        scale_x_log10() +
-        scale_y_log10() +
-        theme_bw() + 
-        geom_hline(yintercept = .16, lty=2, color="red" ) +
-        geom_rect(data=dat[1,], aes(xmin=2,xmax=3, ymin=0.01, ymax=10),fill="black", alpha=.2) +
-        xlab(expression(R[e])) +
-        ylab(expression(theta))
-
-
-p2 <- ggplot(dat, aes(x=Rvec, y=p80)) +
-        geom_point(col='steelblue2', alpha=0.1) +
-        geom_smooth(col='black') +
-        scale_x_log10() +
-        scale_y_log10() + theme_bw() +
-        geom_rect(data=dat[1,], aes(xmin=2,xmax=3, ymin=0.001, ymax=0.2),fill="black", alpha=.2) +
-        ylab("Proportion infecting 80%") +
-        xlab(expression(R[e]))
-
-grid.arrange(p1, p2,
-             ncol=1)
+make_figs(dat)
 ```
 
 **Figure** (top) The optimal $\theta$ versus $R_e$ over 10,000 simulated data sets and (bottom) the 
@@ -158,3 +169,42 @@ Parameters governing transmissibility, including $R_e$ and $\theta$, have import
 All code and data available at: [https://github.com/HopkinsIDD/nCoV-Sandbox](https://github.com/HopkinsIDD/nCoV-Sandbox).
 
 
+#### Update 2020-02-15
+
+Rerunning analysis based on 2020-02-15 data. Thanks
+to [Christopher S. Penn](https://twitter.com/cspenn?s=20) 
+for sending along updated data. 
+
+```{r echo=FALSE, fig.height=6, fig.width=5, message=FALSE, warning=FALSE, fig.align="center"}
+## Read in updated country data. 
+country.dat2 <- read.csv("data/WHOSitrepTable2_20200215.csv")
+country.dat2 <- country.dat2 %>% 
+                 mutate(total.cases = confirmed - cases.unknown) %>% 
+                 filter(total.cases>0) 
+
+tmp.dat2<- sim_data(nreps, country.dat2$total.cases, country.dat2$cases.outside)
+
+dat2 <- make_dat(nreps, tmp.dat2)
+make_figs(dat2)
+
+
+inf80_R2to3_2 <- dat2 %>% filter(Rvec>=2 & Rvec<=3) 
+inf80_Rp5to1_2 <- dat2 %>% filter(Rvec>=0.5 & Rvec<=1) 
+```
+**Updated Figure** (top) The optimal $\theta$ versus $R_e$ over 10,000 simulated data sets and (bottom) the 
+proportion responsible for 80% of onward transmission. Red dashed horizontal line represents the dispersion
+estimated for SARS in Singapore, and the shaded region represents a rough range of plausible
+$R_e$ for the outbreak of COVID-19 in Wuhan.
+
+
+Based on the updated data, e estimate that, if $R_e$ outside of 
+China were between 2 and 3, as estimated within Wuhan, just 
+`r sprintf("%1.1f%% (range %1.1f, %1.1f )", mean(inf80_R2to3_2$p80)*100,  min(inf80_R2to3_2$p80)*100,  max(inf80_R2to3_2$p80)*100)` 
+ of all infections would be responsible for 80% of onward transmission
+ events (compared to `r sprintf("%1.1f%%", mean(inf80_R2to3$p80)*100)`
+ with data as of February 11).
+ Likewise, with updated data, if $R_e$ was reduced to just below 1,
+ in the 0.5-0.1 range, then
+ `r sprintf("%1.1f%% (range %1.1f, %1.1f )", mean(inf80_Rp5to1_2$p80)*100,  min(inf80_Rp5to1_2$p80)*100,  max(inf80_R2to3_2$p80)*100)` 
+ would be responsible for 80% of onward transmission 
+ (compared to `r sprintf("%1.1f%%", mean(inf80_Rp5to1$p80)*100)`).
