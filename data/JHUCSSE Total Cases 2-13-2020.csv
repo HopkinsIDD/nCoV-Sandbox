@@ -1,34 +1,34 @@
 Province/State,Country/Region,Last Update,Confirmed,Deaths,Recovered
-Hubei,Mainland China,2020-02-14T00:13:23Z,51986,1426,4131
-Guangdong,Mainland China,2020-02-14T01:23:02Z,1261,2,332
-Henan,Mainland China,2020-02-14T01:13:05Z,1184,11,313
-Zhejiang,Mainland China,2020-02-14T01:13:05Z,1155,0,367
-Hunan,Mainland China,2020-02-14T01:23:02Z,988,2,352
-Anhui,Mainland China,2020-02-14T01:33:02Z,934,6,166
-Jiangxi,Mainland China,2020-02-14T01:13:06Z,900,1,187
-Jiangsu,Mainland China,2020-02-14T01:03:10Z,593,0,137
+Hubei,Mainland China,2020-02-13T14:13:06Z,48206,1310,3459
+Guangdong,Mainland China,2020-02-13T13:33:01Z,1241,2,314
+Henan,Mainland China,2020-02-13T14:53:02Z,1169,10,296
+Zhejiang,Mainland China,2020-02-13T14:13:06Z,1145,0,360
+Hunan,Mainland China,2020-02-13T11:53:02Z,968,2,339
+Anhui,Mainland China,2020-02-13T13:33:01Z,910,5,157
+Jiangxi,Mainland China,2020-02-13T01:13:08Z,872,1,170
+Jiangsu,Mainland China,2020-02-13T10:33:23Z,570,0,139
 Chongqing,Mainland China,2020-02-13T23:23:05Z,529,4,128
-Shandong,Mainland China,2020-02-14T00:43:02Z,519,2,111
-Sichuan,Mainland China,2020-02-14T00:43:02Z,463,1,105
-Heilongjiang,Mainland China,2020-02-14T00:23:04Z,418,11,37
+Shandong,Mainland China,2020-02-13T13:33:01Z,509,2,105
+Sichuan,Mainland China,2020-02-13T13:33:01Z,451,1,104
+Heilongjiang,Mainland China,2020-02-13T12:13:06Z,395,9,33
 Beijing,Mainland China,2020-02-13T14:13:06Z,366,3,69
-Shanghai,Mainland China,2020-02-14T00:03:08Z,318,1,62
-Hebei,Mainland China,2020-02-14T00:03:08Z,283,3,69
-Fujian,Mainland China,2020-02-14T00:43:02Z,281,0,59
+Shanghai,Mainland China,2020-02-13T06:13:15Z,315,1,62
+Fujian,Mainland China,2020-02-13T10:33:23Z,279,0,57
+Hebei,Mainland China,2020-02-13T10:33:23Z,265,3,68
 Shaanxi,Mainland China,2020-02-13T10:33:23Z,229,0,46
-Guangxi,Mainland China,2020-02-14T00:23:04Z,226,2,35
-Diamond Princess cruise ship,Others,2020-02-14T00:13:23Z,218,0,0
-Hainan,Mainland China,2020-02-14T00:53:02Z,158,4,30
+Guangxi,Mainland China,2020-02-13T00:23:10Z,222,2,33
+Diamond Princess cruise ship,Others,2020-02-12T04:23:38Z,175,0,0
+Hainan,Mainland China,2020-02-13T10:43:03Z,157,4,30
 Yunnan,Mainland China,2020-02-13T08:43:08Z,156,0,27
-Guizhou,Mainland China,2020-02-14T01:53:02Z,140,1,28
+Guizhou,Mainland China,2020-02-13T10:33:23Z,135,1,27
 Shanxi,Mainland China,2020-02-13T23:23:05Z,126,0,36
 Tianjin,Mainland China,2020-02-13T23:43:02Z,119,3,21
 Liaoning,Mainland China,2020-02-13T14:33:02Z,117,1,22
 Gansu,Mainland China,2020-02-13T15:53:03Z,90,2,39
-Jilin,Mainland China,2020-02-14T00:43:02Z,86,1,25
-Ningxia,Mainland China,2020-02-14T01:43:02Z,67,0,24
-Inner Mongolia,Mainland China,2020-02-14T02:03:08Z,65,0,6
-Xinjiang,Mainland China,2020-02-14T01:13:06Z,65,1,6
+Jilin,Mainland China,2020-02-13T13:33:01Z,84,1,24
+Ningxia,Mainland China,2020-02-13T01:23:08Z,64,0,24
+Xinjiang,Mainland China,2020-02-13T10:33:23Z,63,1,6
+Inner Mongolia,Mainland China,2020-02-13T01:23:08Z,61,0,6
 NA,Singapore,2020-02-13T14:33:02Z,58,0,15
 Hong Kong,Hong Kong,2020-02-13T14:53:02Z,53,1,1
 NA,Thailand,2020-02-13T17:53:03Z,33,0,12

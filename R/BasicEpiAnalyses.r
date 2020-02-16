@@ -337,37 +337,32 @@ compare_deaths_to_MERS <- function (kudos) {
 ##' Function to correct for the changes in reporting in Hubei
 ##'
 ##' @param cumdat data frame with the cumulative number of cases
-##' @param firstdate the first date to infer incidence over
-##' @param lastdate  the latest date to infer incidence over
+##' @param first_date the first date to infer incidence over
+##' @param last_date  the latest date to infer incidence over
 ##' 
 ##' @return a version of the inferred incidence data corrected for reportin changes.
 ##' 
-correct_for_Hubei_reporting <- function (cumdat, firstdate, lastdate, tol =100) {
-  ## Reduce to just Hubei and drop the 13th 
-  ## keeping track of it for later
-  cumdat <- cumdat %>% 
-    filter(Province_State=="Hubei")
-  
-  confirmed_13 <- (cumdat %>% filter(as.Date(Update)==as.Date("2020-02-13")))$Confirmed
-  
-  cumdat_no13 <- filter(cumdat, as.Date(Update)!=as.Date("2020-02-13"))
+correct_for_Hubei_reporting <- function (cum_data, first_date, last_date, tol=100) {
+ 
+  ## Reduce to just Hubei and drop the 13th, keeping track of it for later
+  cum_data <- cum_data %>% filter(Province_State=="Hubei")
+  confirmed_13 <- (cum_data %>% filter(as.Date(Update)==as.Date("2020-02-13")))$Confirmed
+  cum_data_no13 <- filter(cum_data, as.Date(Update)!=as.Date("2020-02-13"))
 
-  
   ## Fit the incidence curve to all data but the 13th...inferring for all days.
-  incidence_data <- est_daily_incidence(cumdat_no13,
-                                        firstdate,
-                                        lastdate)
+  incidence_data <- est_daily_incidence(cum_data_no13,
+                                        first_date,
+                                        last_date)
   
-  ##Now get the difference between the inferred cofirmed 13 and the 
-  ##actual
+  ## Now get the difference between the inferred cofirmed 13 and the actual
   inferred_13_smth <- filter(incidence_data, as.Date(Date)==as.Date("2020-02-13"))$Incidence
   
-  inferred_13_cumdat <- confirmed_13 - 
+  inferred_13_cum_data <- confirmed_13 - 
     sum((incidence_data %>% filter(Date<"2020-02-12"))$Incidence)
   
-  diff_inferred <- inferred_13_cumdat - inferred_13_smth
+  diff_inferred <- inferred_13_cum_data - inferred_13_smth
 
-  ##Keep the incidence that we want to return
+  ## Keep the incidence that we want to return
   rc_incidence <- incidence_data
     
   while (diff_inferred>tol) {
@@ -376,26 +371,52 @@ correct_for_Hubei_reporting <- function (cumdat, firstdate, lastdate, tol =100) 
     rc_incidence$Incidence[1:length(to_add)] <- 
       rc_incidence$Incidence[1:length(to_add)]+ to_add
     
-    ##create a new cumsum data
-    tmp_cumdat <- data_frame(Update = rc_incidence$Date,
+    ## create a new cumsum data
+    tmp_cum_data <- data_frame(Update = rc_incidence$Date,
                              Confirmed = cumsum(rc_incidence$Incidence),
                              Province_State = as.factor("Hubei"))
-    rc_incidence <- est_daily_incidence(tmp_cumdat,
-                                          firstdate,
-                                          lastdate)
+    rc_incidence <- est_daily_incidence(tmp_cum_data,
+                                          first_date,
+                                          last_date)
     
     inferred_13_smth <- filter(rc_incidence, as.Date(Date)==as.Date("2020-02-13"))$Incidence
     
-    inferred_13_cumdat <- confirmed_13 - 
+    inferred_13_cum_data <- confirmed_13 - 
       sum((rc_incidence %>% filter(Date<"2020-02-12"))$Incidence)
     
-    diff_inferred <- inferred_13_cumdat - inferred_13_smth
-    
+    diff_inferred <- inferred_13_cum_data - inferred_13_smth
     
     print(diff_inferred)
-    
   }
   
   return(rc_incidence)
-  
 }
+
+
+##'
+##' Wrapper function to correct for the changes in reporting in Hubei and merge with data for all incidence
+##'
+##' @param cum_data   data frame with the cumulative number of cases
+##' @param first_date the first date to infer incidence over
+##' @param last_date  the latest date to infer incidence over
+##' 
+##' @return a corrected version of the inferred incidence data corrected for reporting changes in Hubei.
+##' 
+est_daily_incidence_corrected <- function(cum_data, first_date, last_date, tol=100, na_to_zeros=FALSE){
+  
+  ## Get estimated daily incidence for all provinces
+  incid_uncorr <- est_daily_incidence(cum_data, first_date, last_date, na_to_zeros)
+  
+  ## Get estimated and corrected daily incidence for Hubei
+  incid_hubei_corr <- correct_for_Hubei_reporting(cum_data, first_date, last_date, tol)
+
+  ## Merge these, keeping the corrected Hubei incidence estimates.
+  incid_data <- bind_rows(incid_uncorr %>% 
+                            filter(!(Province_State == "Hubei" & Date <= max(incid_hubei_corr$Date))),
+                          incid_hubei_corr)
+  
+  return(incid_data)
+}
+
+
+
