@@ -1,0 +1,62 @@
+---
+title: "Estimating Incidence and Correcting For Anomolies"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r setup, include=FALSE}
+#Preamble
+require(knitr)
+require(tidyverse)
+require(gridExtra)
+require(rstan)
+
+knitr::opts_knit$set(root.dir = "..")
+
+source("../R/DataLoadUtils.r")
+source("../R/BasicEpiAnalyses.r")
+
+
+```
+
+
+Run incidence estimation and plot results.
+
+```{r, warning=, message=FALSE}
+
+   #Load in the JHU CSSE Data
+   jhucsse <- read_JHUCSSE_cases("2020-02-17 23:59", 
+                                 append_wiki = TRUE)
+  
+  ##Filter to countries with at least
+  #jhucsse <- jhucsse %>% 
+  #  filter(Country_Region%in%
+  #           c("Mainland China", "Macau", "Hong Kong")) 
+  
+  jhucsse$Province_State <- as.factor(jhucsse$Province_State)
+  
+    
+  incidence_data <- est_daily_incidence(jhucsse,
+                                  ISOdate(2019,12,1),
+                                  ISOdate(2020,2,17))
+  
+  ## Correct for the change in reportin on the 13th
+  corrected_hubei <- correct_for_Hubei_reporting(jhucsse,
+                                                 ISOdate(2019,12,1),
+                                                 ISOdate(2020,2,17))
+  
+  corrected_hubei_1314 <- correct_for_Hubei_reporting_1314(jhucsse,
+                                                 ISOdate(2019,12,1),
+                                                 ISOdate(2020,2,17))
+  
+  
+  gridExtra::grid.arrange(plot_incidence_ests_report(conf_cases=jhucsse, incid_ests=incidence_data, locations="Hubei") + ggtitle("Uncorrected"),
+                          plot_incidence_ests_report(conf_cases=jhucsse, incid_ests=corrected_hubei, locations="Hubei") + ggtitle("Corrected for Feb 13"),
+                          plot_incidence_ests_report(conf_cases=jhucsse, incid_ests=corrected_hubei_1314, locations="Hubei") + ggtitle("Corrected for Feb 13-14"), nrow=3)
+
+  
+  # incid_corrected <- est_daily_incidence_corrected(jhucsse,
+  #                                                ISOdate(2019,12,1),
+  #                                                ISOdate(2020,2,17))
+
+```

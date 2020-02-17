@@ -354,12 +354,9 @@ correct_for_Hubei_reporting <- function (cum_data, first_date, last_date, tol=10
                                         first_date,
                                         last_date)
   
-  ## Now get the difference between the inferred cofirmed 13 and the actual
+  ## Now get the difference between the inferred confirmed 13 and the actual
   inferred_13_smth <- filter(incidence_data, as.Date(Date)==as.Date("2020-02-13"))$Incidence
-  
-  inferred_13_cum_data <- confirmed_13 - 
-    sum((incidence_data %>% filter(Date<"2020-02-12"))$Incidence)
-  
+  inferred_13_cum_data <- confirmed_13 - sum((incidence_data %>% filter(Date<"2020-02-13"))$Incidence)
   diff_inferred <- inferred_13_cum_data - inferred_13_smth
 
   ## Keep the incidence that we want to return
@@ -394,6 +391,69 @@ correct_for_Hubei_reporting <- function (cum_data, first_date, last_date, tol=10
 
 
 ##'
+##' Function to correct for the changes in reporting in Hubei
+##'
+##' @param cumdat data frame with the cumulative number of cases
+##' @param first_date the first date to infer incidence over
+##' @param last_date  the latest date to infer incidence over
+##' 
+##' @return a version of the inferred incidence data corrected for reportin changes.
+##' 
+correct_for_Hubei_reporting_1314 <- function (cum_data, first_date, last_date, tol=100) {
+  
+  ## Reduce to just Hubei and drop the 13th, keeping track of it for later
+  cum_data <- cum_data %>% filter(Province_State=="Hubei") %>% arrange(Update)
+  confirmed_1314 <- (cum_data %>% filter(as.Date(Update)==as.Date("2020-02-13") | as.Date(Update)==as.Date("2020-02-14")))
+  confirmed_1314 <- (confirmed_1314 %>% mutate(Date=as.Date(Update)) %>% group_by(Date) %>% filter(Update==max(Update)) %>% ungroup())$Confirmed # get 1 per day
+  cum_data_no1314 <- filter(cum_data, as.Date(Update)!=as.Date("2020-02-13") & as.Date(Update)!=as.Date("2020-02-14"))
+  
+  ## Fit the incidence curve to all data but the 13th or 14th...inferring for all days.
+  incidence_data <- est_daily_incidence(cum_data_no1314,
+                                        first_date,
+                                        last_date)
+  
+  ## Now get the difference between the inferred confirmed 13th and 14th and the actual
+  inferred_1314_smth <- filter(incidence_data, as.Date(Date)==as.Date("2020-02-13") | as.Date(Date)==as.Date("2020-02-14"))$Incidence
+  # Get inferred incidence (to minimize)
+  inferred_13_cum_data <- confirmed_1314[1] - sum((incidence_data %>% filter(Date<"2020-02-13"))$Incidence)
+  inferred_14_cum_data <- confirmed_1314[2] - sum((incidence_data %>% filter(Date<"2020-02-13"))$Incidence) - inferred_13_cum_data
+  
+  # Get number needed to redistribute from each day
+  diff_inferred <- (inferred_13_cum_data - inferred_1314_smth[1]) + (inferred_14_cum_data - inferred_1314_smth[2])
+
+  ## Keep the incidence that we want to return
+  rc_incidence <- incidence_data
+  
+  while (diff_inferred>tol) {
+    to_add <- (incidence_data %>% filter(Date<"2020-02-13"))$Incidence
+    to_add <- to_add/sum(to_add) * diff_inferred
+    rc_incidence$Incidence[1:length(to_add)] <- rc_incidence$Incidence[1:length(to_add)] + to_add
+    
+    ## create a new cumsum data
+    tmp_cum_data <- data_frame(Update = rc_incidence$Date,
+                               Confirmed = cumsum(rc_incidence$Incidence),
+                               Province_State = as.factor("Hubei"))
+    rc_incidence <- est_daily_incidence(tmp_cum_data,
+                                        first_date,
+                                        last_date)
+    
+    
+    ## Now get the difference between the inferred confirmed 13th and 14th and the actual
+    inferred_1314_smth <- filter(rc_incidence, as.Date(Date)==as.Date("2020-02-13") | as.Date(Date)==as.Date("2020-02-14"))$Incidence
+    # Difference
+    inferred_13_cum_data <- confirmed_1314[1] - sum((rc_incidence %>% filter(Date<"2020-02-13"))$Incidence)
+    inferred_14_cum_data <- confirmed_1314[2] - sum((rc_incidence %>% filter(Date<"2020-02-13"))$Incidence) - inferred_13_cum_data
+    diff_inferred <- (inferred_13_cum_data - inferred_1314_smth[1]) + (inferred_14_cum_data - inferred_1314_smth[2])
+    
+    print(diff_inferred)
+  }
+  
+  return(rc_incidence)
+}
+
+
+
+##'
 ##' Wrapper function to correct for the changes in reporting in Hubei and merge with data for all incidence
 ##'
 ##' @param cum_data   data frame with the cumulative number of cases
@@ -420,3 +480,40 @@ est_daily_incidence_corrected <- function(cum_data, first_date, last_date, tol=1
 
 
 
+
+##'
+##' Function to plot the estimated and reported case counts
+##'
+##' @param conf_cases Confirmed case data from JHU CSSE
+##' @param incid_ests Estimated incidence 
+##' @param locations  Locations to plot, can be a vector
+##' 
+##' @return a corrected version of the inferred incidence data corrected for reporting changes in Hubei.
+##'
+plot_incidence_ests_report <- function(conf_cases=jhucsse, incid_ests=incidence_data, locations="Hubei"){
+  
+  incid_ests <- incid_ests %>% mutate(Incidence = ceiling(Incidence)) %>% filter(Province_State %in% locations)
+  incid_ests$Date <- as.Date(incid_ests$Date, "%m/%d/%Y")
+  
+  # Make conf_cases daily
+  # Get daily calculated incidence (from reporting)
+  conf_cases_daily <- conf_cases %>% filter(Province_State %in% locations & !is.na(Confirmed)) %>%
+    mutate(Date = as.Date(Update)) %>% group_by(Province_State, Date) %>% filter(Update == max(Update, na.rm=TRUE)) %>% ungroup()
+  conf_cases_daily <- conf_cases_daily %>% group_by(Province_State) %>% arrange(Date) %>% mutate(Incidence = diff(c(0, Confirmed))) %>% ungroup()
+  
+  # Merge in reported incidence
+  incid_data_ <- left_join(incid_ests, conf_cases_daily %>% rename(Incid_rep = Incidence), by=c("Province_State", "Date")) %>% as_tibble()
+  
+  # Plot
+  p <- ggplot(incid_data_, aes(x=Date, y=Incidence)) + 
+    geom_bar(stat = "identity", fill="maroon") +
+    geom_point(aes(x=Date, y=Incid_rep), col="navyblue") +
+    coord_cartesian(xlim=c(as.Date("2020-01-15"), max(as.Date(incid_data_$Date)))) +
+    theme_classic()
+  
+  if (length(locations)>1){
+    p <- p + facet_wrap(vars(Province_State), nrow=7, ncol=6)
+  }  
+  
+  plot(p)
+}
