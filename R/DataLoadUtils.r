@@ -64,12 +64,13 @@ pull_JHUCSSE_github_data <- function(){
   
   # First get a list of files so we can get the latest one
   req <- GET("https://api.github.com/repos/CSSEGISandData/COVID-19/git/trees/master?recursive=1")
+
   stop_for_status(req)
   filelist <- unlist(lapply(content(req)$tree, "[", "path"), use.names = F)
-  data_files <- grep(".csv", grep("daily_case_updates/", filelist, value=TRUE), value=TRUE)
-  dates_ <- gsub("daily_case_updates/", "", data_files)
+  data_files <- grep(".csv", grep("csse_covid_19_data/csse_covid_19_daily_reports/", filelist, value=TRUE), value=TRUE)
+  dates_ <- gsub("csse_covid_19_data/csse_covid_19_daily_reports/", "", data_files)
   dates_ <- gsub(".csv", "", dates_)
-  dates_reformat_ <- as.POSIXct(dates_, format="%m-%d-%Y_%H%M")
+  dates_reformat_ <- as.POSIXct(dates_, format="%m-%d-%Y")
   dates_tocheck_ <- paste(month(dates_reformat_), day(dates_reformat_), year(dates_reformat_), sep="-")
   
   
@@ -126,12 +127,13 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
   rc <- NULL
 
   for (file in file_list) {
-    #print(file)
+    print(file)
     tmp <- read_csv(file)%>%
       rename(Province_State=`Province/State`)%>%
       rename(Update = `Last Update`) %>%
-      mutate(Update=lubridate::parse_date_time(Update, c("%m/%d/%Y %I:%M %p", "%m/%d/%Y %H:%M", "%m/%d/%y %I:%M %p","%m/%d/%y %H:%M", "%Y-%m-%d %H:%M:%S")))
-
+      mutate(Update=lubridate::parse_date_time(Update, 
+          c("%m/%d/%Y %I:%M %p", "%m/%d/%Y %H:%M", "%m/%d/%y %I:%M %p","%m/%d/%y %H:%M", "%Y-%m-%d %H:%M:%S")))
+    
     if("Country"%in%colnames(tmp)) {
       tmp <- rename(tmp, Country_Region=Country)
     } else {
@@ -145,9 +147,11 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
     rc <-bind_rows(rc,tmp)
   }
   
+  rc <- rc %>% as.data.frame() %>% mutate(Update = lubridate::ymd_hms(Update)) %>% 
+    filter(Update <= last_time) 
   
   ##Now drop any after the date given
-  rc <- rc%>%filter(Update<=last_time) %>%
+  rc <- rc %>%
     mutate(Country_Region=replace(Country_Region, Country_Region=="China", "Mainland China")) %>%
     mutate(Country_Region=replace(Country_Region, Province_State=="Macau", "Macau")) %>%
     mutate(Country_Region=replace(Country_Region, Province_State=="Hong Kong", "Hong Kong")) %>%
@@ -157,7 +161,7 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
   if (append_wiki) {
     wiki <- read_csv("data/WikipediaWuhanPre1-20-2020.csv",
                      col_types=cols(Update = col_datetime("%m/%d/%Y")))
-    rc <-bind_rows(rc,wiki)
+    rc <- bind_rows(rc,wiki)
   }
 
   return(rc)
