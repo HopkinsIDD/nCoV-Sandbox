@@ -547,17 +547,23 @@ correct_for_Hubei_reporting_b <- function (cum_data, first_date, last_date, tol=
                                         first_date,
                                         ISOdate(2020,2,13))
   
-  print(tail(incidence_data))
+
   ## Now get the difference between the inferred confirmed 13 and the actual
   inferred_13_smth <- incidence_data$Incidence[nrow(incidence_data)]
   inferred_13_cum_data <- confirmed_13 - sum((incidence_data %>% filter(Date<"2020-02-13"))$Incidence)
   inferred_14_cum_data <- confirmed_14-confirmed_13
   
-  print(inferred_13_smth)
-  print(inferred_13_cum_data)
-  print(inferred_14_cum_data)
+
    ##subtract...not here we are projecting the same incidence forward fo the 13th and 14th
   diff_inferred <- inferred_13_cum_data - inferred_13_smth +  inferred_14_cum_data - inferred_13_smth 
+  
+  #get incidence inferring only from after the 14th
+  late_incidence <-  est_daily_incidence(cum_data %>% 
+                                           filter(Update>"2020-02-14") %>% 
+                                           mutate(Confirmed=Confirmed-confirmed_14),
+                                         first_date,
+                                         last_date)
+  print(late_incidence)
   
   ##Create data for everything and drop in what we have here 
   rc_incidence <- est_daily_incidence(cum_data,
@@ -567,7 +573,7 @@ correct_for_Hubei_reporting_b <- function (cum_data, first_date, last_date, tol=
   rc_incidence$Incidence[rc_incidence$Date<"2020-02-13"] <- incidence_data$Incidence
   rc_incidence$Incidence[rc_incidence$Date=="2020-02-13"] <- inferred_13_smth
   rc_incidence$Incidence[rc_incidence$Date=="2020-02-14"] <- inferred_13_smth
-  
+  rc_incidence$Incidence[rc_incidence$Date>"2020-02-14"] <- late_incidence$Incidence
   ## Keep the incidence that we want to return
   #rc_incidence <- incidence_data
  
