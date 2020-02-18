@@ -24,6 +24,8 @@ Run incidence estimation and plot results.
 
 ```{r, warning=, message=FALSE}
 
+   pull_JHUCSSE_github_data()
+   
    #Load in the JHU CSSE Data
    jhucsse <- read_JHUCSSE_cases("2020-02-17 23:59", 
                                  append_wiki = TRUE)
@@ -45,16 +47,25 @@ Run incidence estimation and plot results.
                                                  ISOdate(2019,12,1),
                                                  ISOdate(2020,2,17))
   
+  corrected_hubei_b <- correct_for_Hubei_reporting_b(jhucsse,
+                                                 ISOdate(2019,12,1),
+                                                 ISOdate(2020,2,17))
+  
   corrected_hubei_1314 <- correct_for_Hubei_reporting_1314(jhucsse,
                                                  ISOdate(2019,12,1),
                                                  ISOdate(2020,2,17))
   
-  
-  gridExtra::grid.arrange(plot_incidence_ests_report(conf_cases=jhucsse, incid_ests=incidence_data, locations="Hubei") + ggtitle("Uncorrected"),
-                          plot_incidence_ests_report(conf_cases=jhucsse, incid_ests=corrected_hubei, locations="Hubei") + ggtitle("Corrected for Feb 13"),
-                          plot_incidence_ests_report(conf_cases=jhucsse, incid_ests=corrected_hubei_1314, locations="Hubei") + ggtitle("Corrected for Feb 13-14"), nrow=3)
+  gridExtra::grid.arrange(
+      plot_incidence_ests_report(conf_cases=jhucsse, incid_ests=incidence_data, locations="Hubei") +
+          ggtitle("Uncorrected"),
+      plot_incidence_ests_report(conf_cases=jhucsse, incid_ests=corrected_hubei, locations="Hubei") +
+          ggtitle("Corrected for Feb 13"),
+      plot_incidence_ests_report(conf_cases=jhucsse, incid_ests=corrected_hubei_1314, locations="Hubei") +
+          ggtitle("Corrected for Feb 13-14"),
+      plot_incidence_ests_report(conf_cases=jhucsse, incid_ests=corrected_hubei_b, locations="Hubei") +
+          ggtitle("Correction, vB"), nrow=4)
 
-  
+
   # incid_corrected <- est_daily_incidence_corrected(jhucsse,
   #                                                ISOdate(2019,12,1),
   #                                                ISOdate(2020,2,17))

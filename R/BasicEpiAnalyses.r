@@ -508,7 +508,8 @@ plot_incidence_ests_report <- function(conf_cases=jhucsse, incid_ests=incidence_
   p <- ggplot(incid_data_, aes(x=Date, y=Incidence)) + 
     geom_bar(stat = "identity", fill="maroon") +
     geom_point(aes(x=Date, y=Incid_rep), col="navyblue") +
-    coord_cartesian(xlim=c(as.Date("2020-01-15"), max(as.Date(incid_data_$Date)))) +
+    coord_cartesian(xlim=c(as.Date("2020-01-15"), max(as.Date(incid_data_$Date))),
+                     ylim=c(0,max(incid_data_$Incidence*1.25))) +
     theme_classic()
   
   if (length(locations)>1){
