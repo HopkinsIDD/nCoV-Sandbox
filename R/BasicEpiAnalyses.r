@@ -333,6 +333,11 @@ compare_deaths_to_MERS <- function (kudos) {
 }
 
 
+
+
+
+
+
 ##'
 ##' Function to correct for the changes in reporting in Hubei
 ##'
@@ -343,6 +348,98 @@ compare_deaths_to_MERS <- function (kudos) {
 ##' @return a version of the inferred incidence data corrected for reportin changes.
 ##' 
 correct_for_Hubei_reporting <- function (cum_data, first_date, last_date, tol=100) {
+  
+  ## Reduce to just Hubei
+  cum_data <- cum_data %>% filter(Province_State=="Hubei")
+  
+  ## Keep the original data for the 13th and 14th for later
+  confirmed_13 <- (cum_data %>% filter(as.Date(Update)==as.Date("2020-02-13")))$Confirmed
+  confirmed_14 <- (cum_data %>% filter(as.Date(Update)==as.Date("2020-02-14")))$Confirmed
+  
+  ##Get a version of the data going only to the 12
+  cum_data_to12 <- filter(cum_data, as.Date(Update)<as.Date("2020-02-13"))
+  
+  ## Fit the incidence curve to all data up unto the 2th
+  incidence_data <- est_daily_incidence(cum_data_to12,
+                                        first_date,
+                                        ISOdate(2020,2,13))
+  
+  
+  ## Now get the difference between the inferred confirmed 13 and the actual
+  inferred_13_smth <- incidence_data$Incidence[nrow(incidence_data)]
+  inferred_13_cum_data <- confirmed_13 - sum((incidence_data %>% filter(Date<"2020-02-13"))$Incidence)
+  inferred_14_cum_data <- confirmed_14-confirmed_13
+  
+  
+  ##subtract...not here we are projecting the same incidence forward fo the 13th and 14th
+  diff_inferred <- inferred_13_cum_data - inferred_13_smth +  inferred_14_cum_data - inferred_13_smth 
+  
+  #get incidence inferring only from after the 14th
+  late_incidence <-  est_daily_incidence(cum_data %>% 
+                                           filter(Update>"2020-02-14") %>% 
+                                           mutate(Confirmed=Confirmed-confirmed_14),
+                                         first_date,
+                                         last_date)
+  print(late_incidence)
+  
+  ##Create data for everything and drop in what we have here 
+  rc_incidence <- est_daily_incidence(cum_data,
+                                      first_date,
+                                      last_date)
+  
+  rc_incidence$Incidence[rc_incidence$Date<"2020-02-13"] <- incidence_data$Incidence
+  rc_incidence$Incidence[rc_incidence$Date=="2020-02-13"] <- inferred_13_smth
+  rc_incidence$Incidence[rc_incidence$Date=="2020-02-14"] <- inferred_13_smth
+  rc_incidence$Incidence[rc_incidence$Date>"2020-02-14"] <- late_incidence$Incidence
+  ## Keep the incidence that we want to return
+  #rc_incidence <- incidence_data
+  
+  
+  while (abs(diff_inferred)>tol) {
+    to_add <- (incidence_data %>% filter(Date<"2020-02-13"))$Incidence
+    to_add <- to_add/sum(to_add) * diff_inferred
+    rc_incidence$Incidence[1:length(to_add)] <- 
+      rc_incidence$Incidence[1:length(to_add)]+ to_add
+    
+    ## create a new cumsum data
+    tmp_cum_data <- data_frame(Update = rc_incidence$Date,
+                               Confirmed = cumsum(rc_incidence$Incidence),
+                               Province_State = as.factor("Hubei"))
+    rc_incidence <- est_daily_incidence(tmp_cum_data,
+                                        first_date,
+                                        last_date)
+    
+    inferred_13_smth <- filter(rc_incidence, as.Date(Date)==as.Date("2020-02-13"))$Incidence
+    inferred_14_smth <- filter(rc_incidence, as.Date(Date)==as.Date("2020-02-14"))$Incidence
+    
+    inferred_13_cum_data <- confirmed_13 - 
+      sum((rc_incidence %>% filter(Date<"2020-02-13"))$Incidence)
+    
+    
+    diff_inferred <- inferred_13_cum_data - inferred_13_smth +  inferred_14_cum_data - inferred_13_smth 
+    
+    
+    print(diff_inferred)
+  }
+  
+  return(rc_incidence)
+}
+
+
+
+
+
+
+##' THIS IS THE OLD VERSION -- DO NOT USE CURRENTLY
+##' Function to correct for the changes in reporting in Hubei
+##'
+##' @param cumdat data frame with the cumulative number of cases
+##' @param first_date the first date to infer incidence over
+##' @param last_date  the latest date to infer incidence over
+##' 
+##' @return a version of the inferred incidence data corrected for reportin changes.
+##' 
+correct_for_Hubei_reporting_v1 <- function (cum_data, first_date, last_date, tol=100) {
  
   ## Reduce to just Hubei and drop the 13th, keeping track of it for later
   cum_data <- cum_data %>% filter(Province_State=="Hubei")
@@ -388,6 +485,7 @@ correct_for_Hubei_reporting <- function (cum_data, first_date, last_date, tol=10
   
   return(rc_incidence)
 }
+
 
 
 ##'
@@ -522,90 +620,4 @@ plot_incidence_ests_report <- function(conf_cases=jhucsse, incid_ests=incidence_
 
 
 
-##'
-##' Function to correct for the changes in reporting in Hubei
-##'
-##' @param cumdat data frame with the cumulative number of cases
-##' @param first_date the first date to infer incidence over
-##' @param last_date  the latest date to infer incidence over
-##' 
-##' @return a version of the inferred incidence data corrected for reportin changes.
-##' 
-correct_for_Hubei_reporting_b <- function (cum_data, first_date, last_date, tol=100) {
-  
-  ## Reduce to just Hubei
-  cum_data <- cum_data %>% filter(Province_State=="Hubei")
-  
-  ## Keep the original data for the 13th and 14th for later
-  confirmed_13 <- (cum_data %>% filter(as.Date(Update)==as.Date("2020-02-13")))$Confirmed
-  confirmed_14 <- (cum_data %>% filter(as.Date(Update)==as.Date("2020-02-14")))$Confirmed
-  
-  ##Get a version of the data going only to the 12
-  cum_data_to12 <- filter(cum_data, as.Date(Update)<as.Date("2020-02-13"))
- 
-  ## Fit the incidence curve to all data up unto the 2th
-  incidence_data <- est_daily_incidence(cum_data_to12,
-                                        first_date,
-                                        ISOdate(2020,2,13))
-  
-
-  ## Now get the difference between the inferred confirmed 13 and the actual
-  inferred_13_smth <- incidence_data$Incidence[nrow(incidence_data)]
-  inferred_13_cum_data <- confirmed_13 - sum((incidence_data %>% filter(Date<"2020-02-13"))$Incidence)
-  inferred_14_cum_data <- confirmed_14-confirmed_13
-  
-
-   ##subtract...not here we are projecting the same incidence forward fo the 13th and 14th
-  diff_inferred <- inferred_13_cum_data - inferred_13_smth +  inferred_14_cum_data - inferred_13_smth 
-  
-  #get incidence inferring only from after the 14th
-  late_incidence <-  est_daily_incidence(cum_data %>% 
-                                           filter(Update>"2020-02-14") %>% 
-                                           mutate(Confirmed=Confirmed-confirmed_14),
-                                         first_date,
-                                         last_date)
-  print(late_incidence)
-  
-  ##Create data for everything and drop in what we have here 
-  rc_incidence <- est_daily_incidence(cum_data,
-                                        first_date,
-                                        last_date)
-  
-  rc_incidence$Incidence[rc_incidence$Date<"2020-02-13"] <- incidence_data$Incidence
-  rc_incidence$Incidence[rc_incidence$Date=="2020-02-13"] <- inferred_13_smth
-  rc_incidence$Incidence[rc_incidence$Date=="2020-02-14"] <- inferred_13_smth
-  rc_incidence$Incidence[rc_incidence$Date>"2020-02-14"] <- late_incidence$Incidence
-  ## Keep the incidence that we want to return
-  #rc_incidence <- incidence_data
- 
-  
-  while (abs(diff_inferred)>tol) {
-    to_add <- (incidence_data %>% filter(Date<"2020-02-13"))$Incidence
-    to_add <- to_add/sum(to_add) * diff_inferred
-    rc_incidence$Incidence[1:length(to_add)] <- 
-      rc_incidence$Incidence[1:length(to_add)]+ to_add
-    
-    ## create a new cumsum data
-    tmp_cum_data <- data_frame(Update = rc_incidence$Date,
-                               Confirmed = cumsum(rc_incidence$Incidence),
-                               Province_State = as.factor("Hubei"))
-    rc_incidence <- est_daily_incidence(tmp_cum_data,
-                                        first_date,
-                                        last_date)
-    
-    inferred_13_smth <- filter(rc_incidence, as.Date(Date)==as.Date("2020-02-13"))$Incidence
-    inferred_14_smth <- filter(rc_incidence, as.Date(Date)==as.Date("2020-02-14"))$Incidence
-    
-    inferred_13_cum_data <- confirmed_13 - 
-      sum((rc_incidence %>% filter(Date<"2020-02-13"))$Incidence)
-
-    
-    diff_inferred <- inferred_13_cum_data - inferred_13_smth +  inferred_14_cum_data - inferred_13_smth 
-    
-    
-    print(diff_inferred)
-  }
-  
-  return(rc_incidence)
-}
 
