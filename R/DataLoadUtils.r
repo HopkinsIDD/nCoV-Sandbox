@@ -222,10 +222,10 @@ read_MK_linelist <- function(date) {
   
   ##Have non hubei ids be 100000 higher
   hubei <- read_csv(hubei_name, col_types = 
-                      cols(date_onset_symptoms=col_date("%d.%m.%Y"),
+                      cols(#date_onset_symptoms=col_date("%d.%m.%Y"),
                            date_death_or_discharge=col_date("%d.%m.%Y"),
                            date_admission_hospital=col_date("%d.%m.%Y"),
-                           date_confirmation=col_date("%d.%m.%Y"))) %>%
+                           date_confirmation=col_date("%d.%m.%Y"))) #%>%
     #rename(chronic_disease=chronic_diseases) %>% 
    # rename(chronic_disease_binary = `chroDisea_Yes(1)/No(0)`)
   
@@ -280,9 +280,9 @@ process_MK_linelist <- function(data, date) {
     mutate(end_date = as.Date(end_date, origin = "1970-01-01") ) %>% 
     mutate(t = end_date - start_date) %>% 
     # mutate(delta = ifelse(`dead(0)/alive(1)` == 1 |outcome == "discharged", 2, 1)) %>% 
-    mutate(delta = ifelse(outcome == "discharged", 2, 0)) %>% 
-    mutate(delta = ifelse(outcome == "died", 1, delta)) %>% 
-    mutate(delta = ifelse(is.na(delta), 0, delta)) %>% 
+    mutate(delta = ifelse(outcome == "discharged", 2, ifelse(outcome == "died", 1, 0))) %>% 
+    #mutate(delta = ifelse(outcome == "died", 1, delta)) %>% 
+   # mutate(delta = ifelse(is.na(delta), 0, delta)) %>% 
     select(ID, age, sex, province, date_confirmation, start_date, end_date, t, outcome, date_death_or_discharge, date_onset_symptoms, delta)
   
   return(tmp)
