@@ -32,8 +32,9 @@ data {
 
 parameters {
   real <lower=0, upper=1> lambda1; //parameter for time to death distribution
-  real <lower=0, upper=1> lambda; // parameter for time to death or recovery distribution
-  real <lower= 0, upper=1> dr; // wuhan detect rate
+  real <lower=0, upper=1> lambda2; // parameter for time to death or recovery distribution
+  real delta_death_hubei; // wuhan detect rate
+  real delta_recover_hubei; // wuhan detect rate
 }
 
 transformed parameters {
@@ -43,15 +44,15 @@ transformed parameters {
 
 for (j in 1:L) {
     expected_riskset[1,j] = c[1,j];
-    expected_deaths[1,j] = expected_riskset[1,j] * lambda1 + 0.0001 ;
-    expected_recovereds[1,j] = expected_riskset[1,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+    expected_deaths[1,j] = expected_riskset[1,j] * lambda1 * exp(delta_death_hubei *w[j]) + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[1,j] * lambda2 * exp(delta_recover_hubei * w[j]) + 0.0001;
  
     for (t in 2:T) {
        expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
-                                expected_deaths[t-1,j] - expected_riskset[t-1,j] * (lambda - lambda1);
+                                expected_deaths[t-1,j] - expected_recovereds[t-1,j] ;
                             
-      expected_deaths[t,j] = expected_riskset[t,j] * lambda1 + 0.0001 ;
-      expected_recovereds[t,j] = expected_riskset[t,j] * (lambda - lambda1) * (dr)^w[j] + 0.0001;
+      expected_deaths[t,j] = expected_riskset[t,j] * lambda1 * exp(delta_death_hubei *w[j])+ 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[t,j] *  lambda2 * exp(delta_recover_hubei * w[j]) + 0.0001;
       
     }
   }
@@ -59,6 +60,10 @@ for (j in 1:L) {
 
 
 model {
+
+  delta_death_hubei ~ normal(0,2); //somewhat stron prior around 0
+  delta_recover_hubei ~ normal(0,2); //somewhat stron prior around 0
+  
   //definitely can be made more effcient.
   for (j in 1:L) {
     for (t in 1:T) {
@@ -86,19 +91,18 @@ Prep data.
   
   jhucsse$Province_State <- as.factor(jhucsse$Province_State)
   
+  incidence_data <- est_daily_incidence_corrected(jhucsse,
+                                                  ISOdate(2019,12,1),
+                                                  ISOdate(2020,2,17))
+  
+  
     
-  incidence_data <- est_daily_incidence(jhucsse,
-                                  ISOdate(2019,12,1),
-                                  ISOdate(2020,2,14))
+  #incidence_data <- est_daily_incidence(jhucsse,
+  #                                ISOdate(2019,12,1),
+  #                                ISOdate(2020,2,14))
   
   
-  ## Correct for the change in reportin on the 13th
-  corrected_hubei <- correct_for_Hubei_reporting(jhucsse,
-                                                 ISOdate(2019,12,1),
-                                                 ISOdate(2020,2,14))
-  
-  ##Replace incdience stuff with corrected hubei data.
-  incidence_data[incidence_data$Province_State=="Hubei",] <- corrected_hubei
+  incidence_data$Province_State <- factor(incidence_data$Province_State, levels=levels(jhucsse$Province_State))
          
   ##look at this before we do it.
   inc_plt <- incidence_data%>%filter(Date>"2020-1-1") %>% 
@@ -232,17 +236,29 @@ Prep data.
 chains <- extract(cfrmdl_CH_res)
 
 rho_CH <- matrix(nrow = length(chains$lambda1))
+rho_CH_hubei <-matrix(nrow = length(chains$lambda1))
 for(i in 1:length(chains$lambda1)){
 
   try (
     rho_CH[i] <- integrate(function(x)
-      {chains$lambda1[i]*exp(-chains$lambda[i]*x)}, 
+      {chains$lambda1[i]*exp(-(chains$lambda1[i]+chains$lambda2[i])*x)}, 
+                        lower = 0, upper = Inf)$value)
+  
+  try(
+    rho_CH_hubei[i] <- integrate(function(x)
+      {chains$lambda1[i]*exp(chains$delta_death_hubei[i])*
+        exp(-(chains$lambda1[i]*exp(chains$delta_death_hubei[i])+
+                chains$lambda2[i]*exp(chains$delta_recover_hubei[i]))*x)}, 
                         lower = 0, upper = Inf)$value)
 }
 
 
 median(rho_CH)
 quantile(rho_CH, probs = c(.025, .975))
+
+
+median(rho_CH_hubei)
+quantile(rho_CH_hubei, probs = c(.025, .975))
 ```
 Try running the same model with just non Hubei.
 
@@ -381,9 +397,7 @@ model {
 ```
 
 ```{r}
-##Translate this into estimates of the CFR, rho/
-
-###CURRENTLY ONLY WORKS FOR THE SINGLE N CASE
+##Translate this into estimates of the CFR, rho
 N <- cfrmdl_erlang_data$N
 
 ##' Param 1 is alpha.
