@@ -1,0 +1,177 @@
+---
+title: "Diamond Princess analysis"
+author: "Stephen Lauer and Justin Lessler"
+date: "2/20/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+knitr::opts_knit$set(root.dir = here::here())
+```
+
+```{r load}
+library(tidyverse)
+library(lubridate)
+library(EpiEstim)
+library(gridExtra)
+## color blind palette
+cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+## read in Diamond Princess data
+dp_dat <- read_csv("data/diamond-princess.csv") %>% 
+    mutate(dates=dmy(paste(Date, "2020", sep="-")),
+           ## add the HK case to Tests and Positive
+           Tests=ifelse(dates>=ymd("2020-02-01"), Tests+1, Tests),
+           Positive=ifelse(dates>=ymd("2020-02-01"), Positive+1, Positive),
+           Asymptomatic=ifelse(is.na(Asymptomatic),0,Asymptomatic),
+           ## get daily numbers
+           daily_test=diff(c(0,Tests)),
+           daily_infected=diff(c(0,Positive)),
+           daily_asym=diff(c(0,Asymptomatic)),
+           daily_sym=daily_infected-daily_asym)
+```
+
+## Data overview
+
+The Diamond Princess data consists of a dates and the cumulative tests, positive tests, and "asymptomatic" cases for those dates.
+"Asympomatic" could also refer to "not-yet-symptomatic" cases.
+Asymptomatics are not formally counted until Feb 15 but it is noted that there were 35 asymptomatic cases previously discovered, they are assigned to Feb 13.
+The first case that was detected in HK on Feb 1 (after staying on boat from Jan 20-25), is not included in the dataset (but is added in retrospectively).
+
+```{r data-plots}
+data_plot <- dp_dat %>% 
+    select(dates, daily_sym, daily_asym) %>% 
+    pivot_longer(cols=c(daily_sym, daily_asym),
+                 names_to="case_type",
+                 values_to="number")
+
+symptomatic_plot <- ggplot(data=data_plot) +
+    geom_bar(aes(x=dates, y=number, fill=case_type),
+             stat="identity", position="dodge") +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    geom_text(aes(x=ymd("2020-02-03"), y=70, label="Quarantine\nstarts"),
+              color="black") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    geom_text(aes(x=ymd("2020-02-14"), y=70, label="US\nevacuation"),
+              color="black") +
+    scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
+    scale_y_continuous("Number of cases") +
+    scale_fill_manual("Case type",
+                      labels=c("Asymptomatic", "Symptomatic"),
+                      values=cbbPalette[-1]) +
+    theme_bw() +
+    theme(axis.text=element_text(color="black"),
+          legend.position=c(.15, .5))
+
+test_plot <- ggplot(data=dp_dat) +
+    geom_bar(aes(x=dates, y=daily_test),
+             stat="identity", position="dodge") +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
+    scale_y_continuous("Number of tests") +
+    theme_bw() +
+    theme(axis.text=element_text(color="black"))
+
+grid.arrange(symptomatic_plot, test_plot, ncol=1)
+```
+
+## Using all cases
+
+To find R_0, we need to estimate the mean and standard deviation of the serial interval.
+We have three potential estimates:
+
+1. The estimate from SARS (mean: 8.4, sd: 3.8)
+2. An early estimate for COVID-19 (mean: 4.4, sd: 3.2)
+3. An eyeball estimate from our data (mean: 3.0, sd: 3.2)
+
+We'll start out by looking at all of the data, including symptomatic and asymptomatic cases.
+
+```{r R0}
+R_est_SARS <- estimate_R(dp_dat %>% select(dates, I=daily_infected),
+                         method="parametric_si",
+                         config=make_config(list(mean_si=8.4,
+                                                 std_si=3.8,
+                                                 # mean_si=4.41,
+                                                 # std_si=3.17,
+                                                 t_start=seq(2,nrow(dp_dat)),
+                                                 t_end=seq(2,nrow(dp_dat)))))
+# knitr::kable(R_est_SARS$R[,c(1,3,5,8,11)], digits=2)
+
+
+R_est_ncov <- estimate_R(dp_dat %>% select(dates, I=daily_infected),
+                         method="parametric_si",
+                         config=make_config(list(#mean_si=8.4,
+                             #std_si=3.8,
+                             mean_si=4.4,
+                             std_si=3.2,
+                             t_start=seq(2,nrow(dp_dat)),
+                             t_end=seq(2,nrow(dp_dat)))))
+
+# knitr::kable(R_est_ncov$R[,c(1,3,5,8,11)], digits=2)
+
+R_est_eyeball <- estimate_R(dp_dat %>% select(dates, I=daily_infected),
+                            method="parametric_si",
+                            config=make_config(list(#mean_si=8.4,
+                                #std_si=3.8,
+                                mean_si=3,
+                                std_si=3.2,
+                                t_start=seq(2,nrow(dp_dat)),
+                                t_end=seq(2,nrow(dp_dat)))))
+
+# knitr::kable(R_est_eyeball$R[,c(1,3,5,8,11)], digits=2)
+
+plot_dat <- tibble(dates=c(R_est_SARS$dates[2:26],
+                           R_est_ncov$dates[2:26],
+                           R_est_eyeball$dates[2:26]),
+                   R_mean=c(R_est_SARS$R$`Mean(R)`,
+                            R_est_ncov$R$`Mean(R)`,
+                            R_est_eyeball$R$`Mean(R)`),
+                   R_lb=c(R_est_SARS$R$`Quantile.0.025(R)`,
+                          R_est_ncov$R$`Quantile.0.025(R)`,
+                          R_est_eyeball$R$`Quantile.0.025(R)`),
+                   R_ub=c(R_est_SARS$R$`Quantile.0.975(R)`,
+                          R_est_ncov$R$`Quantile.0.975(R)`,
+                          R_est_eyeball$R$`Quantile.0.975(R)`),
+                   gen_time=c(rep("SARS", 25),
+                              rep("COVID-19", 25),
+                              rep("Eyeball", 25)))
+
+ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
+    geom_line(aes(y=R_mean)) +
+    geom_line(aes(y=R_lb), linetype="dashed") +
+    geom_line(aes(y=R_ub), linetype="dashed") +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
+              color="black") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
+              color="black") +
+    scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
+    scale_y_continuous("R") +
+    scale_color_manual("Generation Time",
+                       values=cbbPalette[-1]) +
+    theme_bw() +
+    theme(axis.text=element_text(color="black"),
+          legend.position="bottom")
+# 
+# ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
+#     geom_smooth(aes(y=R_mean), se=F) +
+#     geom_smooth(aes(y=R_lb), linetype="dashed", se=F) +
+#     geom_smooth(aes(y=R_ub), linetype="dashed", se=F) +
+#     scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
+#     scale_y_log10("R") +
+#     scale_color_discrete("Generation Time") +
+#     theme_bw() +
+#     theme(axis.text=element_text(color="black"),
+#           legend.position=c(0.75, 0.75))
+
+
+# grid.arrange(R0_plot, symptomatic_plot, test_plot, ncol=1)
+
+```
+
+## Using only symptomatic cases
+
+## Using asymptomatic cases with a shadow
