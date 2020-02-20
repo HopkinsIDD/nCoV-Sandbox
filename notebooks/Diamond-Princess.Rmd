@@ -55,13 +55,19 @@ symptomatic_plot <- ggplot(data=data_plot) +
     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
     geom_text(aes(x=ymd("2020-02-14"), y=70, label="US\nevacuation"),
               color="black") +
-    scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
+    scale_x_date("",
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
     scale_y_continuous("Number of cases") +
     scale_fill_manual("Case type",
                       labels=c("Asymptomatic", "Symptomatic"),
                       values=cbbPalette[-1]) +
     theme_bw() +
-    theme(axis.text=element_text(color="black"),
+    theme(axis.text.y=element_text(color="black"),
+          axis.title.x=element_blank(),
+          axis.title.y=element_text(vjust=0),
+          axis.text.x=element_blank(),
           legend.position=c(.15, .5))
 
 test_plot <- ggplot(data=dp_dat) +
@@ -69,26 +75,30 @@ test_plot <- ggplot(data=dp_dat) +
              stat="identity", position="dodge") +
     geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
-    scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
+    scale_x_date("",
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
     scale_y_continuous("Number of tests") +
     theme_bw() +
-    theme(axis.text=element_text(color="black"))
+    theme(axis.text.y=element_text(color="black"),
+          axis.text.x=element_text(color="black", angle=45, hjust=1))
 
 grid.arrange(symptomatic_plot, test_plot, ncol=1)
 ```
 
 ## Using all cases
 
-To find R_0, we need to estimate the mean and standard deviation of the serial interval.
-We have three potential estimates:
+To find R_t, we need to estimate the mean and standard deviation of the serial interval.
+We use two estimates:
 
 1. The estimate from SARS (mean: 8.4, sd: 3.8)
 2. An early estimate for COVID-19 (mean: 4.4, sd: 3.2)
-3. An eyeball estimate from our data (mean: 3.0, sd: 3.2)
+<!-- 3. An eyeball estimate from our data (mean: 3.0, sd: 3.2) -->
 
 We'll start out by looking at all of the data, including symptomatic and asymptomatic cases.
 
-```{r R0}
+```{r Rt}
 R_est_SARS <- estimate_R(dp_dat %>% select(dates, I=daily_infected),
                          method="parametric_si",
                          config=make_config(list(mean_si=8.4,
@@ -136,24 +146,138 @@ plot_dat <- tibble(dates=c(R_est_SARS$dates[2:26],
                           R_est_eyeball$R$`Quantile.0.975(R)`),
                    gen_time=c(rep("SARS", 25),
                               rep("COVID-19", 25),
-                              rep("Eyeball", 25)))
+                              rep("Eyeball", 25)),
+                   analysis="overall") %>% 
+    left_join(dp_dat %>% select(dates, daily_infected)) %>% 
+    filter(daily_infected>0 | R_mean>0.2, gen_time !="Eyeball")
 
 ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
-    geom_line(aes(y=R_mean)) +
-    geom_line(aes(y=R_lb), linetype="dashed") +
-    geom_line(aes(y=R_ub), linetype="dashed") +
     geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
     geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
               color="black") +
     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
     geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
               color="black") +
-    scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
-    scale_y_continuous("R") +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
+    geom_line(aes(y=R_mean)) +
+    geom_line(aes(y=R_lb), linetype="dashed") +
+    geom_line(aes(y=R_ub), linetype="dashed") +
+    scale_x_date("",
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_log10("Time-varying reproduction number, R",
+                  breaks=2^seq(-10,10,2)) +
     scale_color_manual("Generation Time",
                        values=cbbPalette[-1]) +
     theme_bw() +
-    theme(axis.text=element_text(color="black"),
+    theme(axis.text.y=element_text(color="black"),
+          axis.text.x=element_text(color="black", angle=45, hjust=1),
+          legend.position="bottom")
+# 
+# ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
+#     geom_smooth(aes(y=R_mean), se=F) +
+#     geom_smooth(aes(y=R_lb), linetype="dashed", se=F) +
+#     geom_smooth(aes(y=R_ub), linetype="dashed", se=F) +
+#     scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
+#     scale_y_log10("R") +
+#     scale_color_discrete("Generation Time") +
+#     theme_bw() +
+#     theme(axis.text=element_text(color="black"),
+#           legend.position=c(0.75, 0.75))
+
+
+# grid.arrange(R0_plot, symptomatic_plot, test_plot, ncol=1)
+```
+
+When using the SARS serial interval estimate, there is a large spike in the reproductive number right after the outbreak.
+With the COVID-19 estimate, the reproductive number falls below 1 three days after the implementation of the quarantine (Feb 8), which should be the goal of a quarantine.
+But the reproductive number bounced up to 6 on Feb 10 before settling in between 2-3 until falling below 2 on Feb 18.
+
+However, this analysis probably biases the R_t value high.
+The serial interval is the time between the symptom onset of a primary case and the symptom onset of a secondary case.
+Since these "asymptomatic" cases could be symptomatic cases that have not presented symptoms yet, then we are violating that definition.
+By including more cases, we are inflating the amount of transmission and thus reproduction number would be biased high.
+
+## Using only symptomatic cases
+
+After removing the asymptomatic cases, we get the following estimates:
+
+```{r Rt-symp}
+R_SARS_sym <- estimate_R(dp_dat %>% select(dates, I=daily_sym),
+                         method="parametric_si",
+                         config=make_config(list(mean_si=8.4,
+                                                 std_si=3.8,
+                                                 # mean_si=4.41,
+                                                 # std_si=3.17,
+                                                 t_start=seq(2,nrow(dp_dat)),
+                                                 t_end=seq(2,nrow(dp_dat)))))
+# knitr::kable(R_est_SARS$R[,c(1,3,5,8,11)], digits=2)
+
+
+R_ncov_sym <- estimate_R(dp_dat %>% select(dates, I=daily_sym),
+                         method="parametric_si",
+                         config=make_config(list(#mean_si=8.4,
+                             #std_si=3.8,
+                             mean_si=4.4,
+                             std_si=3.2,
+                             t_start=seq(2,nrow(dp_dat)),
+                             t_end=seq(2,nrow(dp_dat)))))
+
+# knitr::kable(R_est_ncov$R[,c(1,3,5,8,11)], digits=2)
+
+R_eyeball_sym <- estimate_R(dp_dat %>% select(dates, I=daily_sym),
+                            method="parametric_si",
+                            config=make_config(list(#mean_si=8.4,
+                                #std_si=3.8,
+                                mean_si=3,
+                                std_si=3.2,
+                                t_start=seq(2,nrow(dp_dat)),
+                                t_end=seq(2,nrow(dp_dat)))))
+
+# knitr::kable(R_est_eyeball$R[,c(1,3,5,8,11)], digits=2)
+
+sym_plot_dat <- tibble(dates=c(R_SARS_sym$dates[2:26],
+                           R_ncov_sym$dates[2:26],
+                           R_eyeball_sym$dates[2:26]),
+                   R_mean=c(R_SARS_sym$R$`Mean(R)`,
+                            R_ncov_sym$R$`Mean(R)`,
+                            R_eyeball_sym$R$`Mean(R)`),
+                   R_lb=c(R_SARS_sym$R$`Quantile.0.025(R)`,
+                          R_ncov_sym$R$`Quantile.0.025(R)`,
+                          R_eyeball_sym$R$`Quantile.0.025(R)`),
+                   R_ub=c(R_SARS_sym$R$`Quantile.0.975(R)`,
+                          R_ncov_sym$R$`Quantile.0.975(R)`,
+                          R_eyeball_sym$R$`Quantile.0.975(R)`),
+                   gen_time=c(rep("SARS", 25),
+                              rep("COVID-19", 25),
+                              rep("Eyeball", 25)),
+                   analysis="symptomatic") %>% 
+    left_join(dp_dat %>% select(dates, daily_infected)) %>% 
+    filter(daily_infected>0 | R_mean>0.2, gen_time !="Eyeball")
+
+ggplot(data=sym_plot_dat, aes(x=dates, color=as.factor(gen_time))) +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
+              color="black") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
+              color="black") +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
+    geom_line(aes(y=R_mean)) +
+    geom_line(aes(y=R_lb), linetype="dashed") +
+    geom_line(aes(y=R_ub), linetype="dashed") +
+    scale_x_date("",
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_log10("Time-varying reproduction number, R",
+                  breaks=2^seq(-10,10,2)) +
+    scale_color_manual("Generation Time",
+                       values=cbbPalette[-1]) +
+    theme_bw() +
+    theme(axis.text.y=element_text(color="black"),
+          axis.text.x=element_text(color="black", angle=45, hjust=1),
           legend.position="bottom")
 # 
 # ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
@@ -170,8 +294,151 @@ ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
 
 # grid.arrange(R0_plot, symptomatic_plot, test_plot, ncol=1)
 
+bind_rows(plot_dat, sym_plot_dat) %>%
+    filter(daily_infected>0 | R_mean>0.2, gen_time=="COVID-19") %>% 
+    ggplot(aes(x=dates, color=analysis)) +
+    geom_line(aes(y=R_mean)) +
+    geom_line(aes(y=R_lb), linetype="dashed") +
+    geom_line(aes(y=R_ub), linetype="dashed") +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
+    scale_x_date("",
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_log10("Time-varying reproduction number, R",
+                  breaks=2^seq(-10,10,2)) +
+    scale_color_manual("Analysis",
+                       values=cbbPalette[c(6:8)]) +
+    ggtitle("Comparison of overall and symptomatic analyses using COVID-19 estimates") +
+    theme_bw() +
+    theme(axis.text.y=element_text(color="black"),
+          axis.text.x=element_text(color="black", angle=45, hjust=1),
+          legend.position="bottom")
 ```
 
-## Using only symptomatic cases
+Since the "asymptomatic" cases are concentrated at the end, that's where we see the difference in the estimates.
+While we still observe the bounce on Feb 10, the estimates call below 1 again on Feb 13 and the average stays below 2 for the remainder of the crisis.
+
+Of course, when we leave out asymptomatic cases and truncate the data on Feb 19 then we are ignoring a large portion of the transmission.
+Let's see if we can account for these cases in a more intelligent manner.
 
 ## Using asymptomatic cases with a shadow
+
+
+
+```{r Rt-shadow}
+R_SARS_sym <- estimate_R(dp_dat %>% select(dates, I=daily_sym),
+                         method="parametric_si",
+                         config=make_config(list(mean_si=8.4,
+                                                 std_si=3.8,
+                                                 # mean_si=4.41,
+                                                 # std_si=3.17,
+                                                 t_start=seq(2,nrow(dp_dat)),
+                                                 t_end=seq(2,nrow(dp_dat)))))
+# knitr::kable(R_est_SARS$R[,c(1,3,5,8,11)], digits=2)
+
+
+R_ncov_sym <- estimate_R(dp_dat %>% select(dates, I=daily_sym),
+                         method="parametric_si",
+                         config=make_config(list(#mean_si=8.4,
+                             #std_si=3.8,
+                             mean_si=4.4,
+                             std_si=3.2,
+                             t_start=seq(2,nrow(dp_dat)),
+                             t_end=seq(2,nrow(dp_dat)))))
+
+# knitr::kable(R_est_ncov$R[,c(1,3,5,8,11)], digits=2)
+
+R_eyeball_sym <- estimate_R(dp_dat %>% select(dates, I=daily_sym),
+                            method="parametric_si",
+                            config=make_config(list(#mean_si=8.4,
+                                #std_si=3.8,
+                                mean_si=3,
+                                std_si=3.2,
+                                t_start=seq(2,nrow(dp_dat)),
+                                t_end=seq(2,nrow(dp_dat)))))
+
+# knitr::kable(R_est_eyeball$R[,c(1,3,5,8,11)], digits=2)
+
+sym_plot_dat <- tibble(dates=c(R_SARS_sym$dates[2:26],
+                           R_ncov_sym$dates[2:26],
+                           R_eyeball_sym$dates[2:26]),
+                   R_mean=c(R_SARS_sym$R$`Mean(R)`,
+                            R_ncov_sym$R$`Mean(R)`,
+                            R_eyeball_sym$R$`Mean(R)`),
+                   R_lb=c(R_SARS_sym$R$`Quantile.0.025(R)`,
+                          R_ncov_sym$R$`Quantile.0.025(R)`,
+                          R_eyeball_sym$R$`Quantile.0.025(R)`),
+                   R_ub=c(R_SARS_sym$R$`Quantile.0.975(R)`,
+                          R_ncov_sym$R$`Quantile.0.975(R)`,
+                          R_eyeball_sym$R$`Quantile.0.975(R)`),
+                   gen_time=c(rep("SARS", 25),
+                              rep("COVID-19", 25),
+                              rep("Eyeball", 25)),
+                   analysis="symptomatic") %>% 
+    left_join(dp_dat %>% select(dates, daily_infected)) %>% 
+    filter(daily_infected>0 | R_mean>0.2, gen_time !="Eyeball")
+
+ggplot(data=sym_plot_dat, aes(x=dates, color=as.factor(gen_time))) +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
+              color="black") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
+              color="black") +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
+    geom_line(aes(y=R_mean)) +
+    geom_line(aes(y=R_lb), linetype="dashed") +
+    geom_line(aes(y=R_ub), linetype="dashed") +
+    scale_x_date("",
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_log10("Time-varying reproduction number, R",
+                  breaks=2^seq(-10,10,2)) +
+    scale_color_manual("Generation Time",
+                       values=cbbPalette[-1]) +
+    theme_bw() +
+    theme(axis.text.y=element_text(color="black"),
+          axis.text.x=element_text(color="black", angle=45, hjust=1),
+          legend.position="bottom")
+# 
+# ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
+#     geom_smooth(aes(y=R_mean), se=F) +
+#     geom_smooth(aes(y=R_lb), linetype="dashed", se=F) +
+#     geom_smooth(aes(y=R_ub), linetype="dashed", se=F) +
+#     scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
+#     scale_y_log10("R") +
+#     scale_color_discrete("Generation Time") +
+#     theme_bw() +
+#     theme(axis.text=element_text(color="black"),
+#           legend.position=c(0.75, 0.75))
+
+
+# grid.arrange(R0_plot, symptomatic_plot, test_plot, ncol=1)
+
+bind_rows(plot_dat, sym_plot_dat) %>%
+    filter(daily_infected>0 | R_mean>0.2, gen_time=="COVID-19") %>% 
+    ggplot(aes(x=dates, color=analysis)) +
+    geom_line(aes(y=R_mean)) +
+    geom_line(aes(y=R_lb), linetype="dashed") +
+    geom_line(aes(y=R_ub), linetype="dashed") +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
+    scale_x_date("",
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_log10("Time-varying reproduction number, R",
+                  breaks=2^seq(-10,10,2)) +
+    scale_color_manual("Analysis",
+                       values=cbbPalette[c(6:8)]) +
+    ggtitle("Comparison of overall and symptomatic analyses using COVID-19 estimates") +
+    theme_bw() +
+    theme(axis.text.y=element_text(color="black"),
+          axis.text.x=element_text(color="black", angle=45, hjust=1),
+          legend.position="bottom")
+```
