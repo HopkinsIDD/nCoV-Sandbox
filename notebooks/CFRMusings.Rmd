@@ -61,8 +61,8 @@ for (j in 1:L) {
 
 model {
 
-  delta_death_hubei ~ normal(0,2); //somewhat stron prior around 0
-  delta_recover_hubei ~ normal(0,2); //somewhat stron prior around 0
+  delta_death_hubei ~ normal(0,.5); //somewhat stron prior around 0
+  delta_recover_hubei ~ normal(0,.5); //somewhat stron prior around 0
   
   //definitely can be made more effcient.
   for (j in 1:L) {
@@ -81,7 +81,7 @@ Prep data.
 ```{r, warning=, message=FALSE}
 
    #Load in the JHU CSSE Data
-   jhucsse <- read_JHUCSSE_cases("2020-02-15 23:59", 
+   jhucsse <- read_JHUCSSE_cases("2020-02-20 23:59", 
                                  append_wiki = TRUE)
   
   ##Filter to countries with at least
@@ -93,7 +93,7 @@ Prep data.
   
   incidence_data <- est_daily_incidence_corrected(jhucsse,
                                                   ISOdate(2019,12,1),
-                                                  ISOdate(2020,2,17))
+                                                  ISOdate(2020,2,19))
   
   
     
@@ -135,7 +135,7 @@ Prep data.
   
    death_data <- est_daily_deaths(jhucsse,
                                   ISOdate(2019,12,1),
-                                  ISOdate(2020,2,13))
+                                  ISOdate(2020,2,19))
    
   #look at this before we do it.
   death_plt <- death_data%>%filter(Date>"2020-1-1") %>% 
@@ -171,7 +171,7 @@ Prep data.
   #Recoveries
   recovered_data <- est_daily_recovered(jhucsse,
                                   ISOdate(2019,12,1),
-                                  ISOdate(2020,2,12), na_to_zeros = TRUE)
+                                  ISOdate(2020,2,19), na_to_zeros = TRUE)
   
   
   #look at this before we do it.
@@ -262,41 +262,8 @@ quantile(rho_CH_hubei, probs = c(.025, .975))
 ```
 Try running the same model with just non Hubei.
 
-```{r}
 
-
- ##we now have everything to run our stand model
-  cfrmdl_CH_data_no_Hubei <- list(T=Tmax, L=length(which(w==0)),
-                        c= cases[,which(w==0)],
-                        d= deaths[,which(w==0)],
-                        r=recovereds[,which(w==0)],
-                        w=w[which(w==0)]) #a little funny, but shoudl work
-  
-  cfrmdl_CH_res_no_Hubei <- sampling(cfrmdl_const_haz, data=cfrmdl_CH_data_no_Hubei,
-                         iter=2000)
-
-```
-
-```{r}
-##Translate this into estimates of the CFR, rho
-
-chains <- extract(cfrmdl_CH_res_no_Hubei)
-
-rho_CH_no_Hubei <- matrix(nrow = length(chains$lambda1))
-for(i in 1:length(chains$lambda1)){
-
-  try (
-    rho_CH_no_Hubei[i] <- integrate(function(x)
-      {chains$lambda1[i]*exp(-chains$lambda[i]*x)}, 
-                        lower = 0, upper = Inf)$value)
-}
-
-
-median(rho_CH_no_Hubei)
-quantile(rho_CH_no_Hubei, probs = c(.025, .975))
-```
-
-Big differences between including and not including Hubei. One thought
+Big differences between Hubei and elsewhere. One thought
 is this could partially be fixed if we dealt better with the delay 
 disctribution.
 
@@ -317,7 +284,9 @@ parameters {
   real <lower=0, upper=1> lambda1[N]; //death rate per compartment
   real <lower=0, upper=1> lambda2[N]; //recovery rate per compartment
   real <lower=0, upper=1> alpha; //rate of movement between compartments .
-  real <lower= 0, upper=1> dr; // wuhan detect rate
+  real delta_death_hubei; // wuhan detect rate
+  real delta_recover_hubei; // wuhan detect rate
+
 }
 
 transformed parameters {
@@ -328,9 +297,10 @@ transformed parameters {
 for (j in 1:L) {
     //initialize the 
     expected_riskset[1,j,1] = c[1,j];
-    expected_deaths[1,j] = expected_riskset[1,j,1] * lambda1[1] + 0.0001 ;
+    expected_deaths[1,j] = expected_riskset[1,j,1] *
+          lambda1[1] * exp(delta_death_hubei *w[j]) + 0.0001 ;
     expected_recovereds[1,j] = expected_riskset[1,j,1] *
-        lambda2[1] * (dr)^w[j] + 0.0001;
+        lambda2[1] * exp(delta_recover_hubei * w[j]) + 0.0001;
     
     //Initialize the riskset i ther compartments to 0 if they exist.
     if(N>1) {
@@ -342,8 +312,8 @@ for (j in 1:L) {
     for (t in 2:T) {
        //Move deaths and recoveries from last timestep out of first compartment.
        expected_riskset[t,j,1] =  expected_riskset[t-1,j,1] + c[t,j] - 
-                                  expected_riskset[t-1,j,1] * lambda1[1] - 
-                                  expected_riskset[t-1,j,1] * lambda2[1];
+                                  expected_riskset[t-1,j,1] * lambda1[1] * exp(delta_death_hubei *w[j]) - 
+                                  expected_riskset[t-1,j,1] * lambda2[1] * exp(delta_recover_hubei * w[j]);
                                 
       if(N>1) {
         for (i in 2:N) {
@@ -352,21 +322,21 @@ for (j in 1:L) {
           
           expected_riskset[t,j,i] =  expected_riskset[t-1,j,i] +
                                      alpha *expected_riskset[t-1,j,i-1] -
-                                     expected_riskset[t-1,j,i] * lambda1[i]-
-                                     expected_riskset[t-1,j,i] * lambda2[i];
+                                     expected_riskset[t-1,j,i] * lambda1[i] * exp(delta_death_hubei *w[j])-
+                                     expected_riskset[t-1,j,i] * lambda2[i] * exp(delta_recover_hubei * w[j]);
         }
       }                            
       
       //Accumulate deaths and recovereds                      
-      expected_deaths[t,j] = expected_riskset[t,j,1] * lambda1[1] + 0.0001 ;
+      expected_deaths[t,j] = expected_riskset[t,j,1] * lambda1[1] * exp(delta_death_hubei *w[j]) + 0.0001 ;
       expected_recovereds[t,j] = expected_riskset[t,j,1] * 
-              lambda2[1] * (dr)^w[j] + 0.0001;
+              lambda2[1] * exp(delta_recover_hubei * w[j])  + 0.0001;
               
       if(N>1) {
         for (i in 2:N) {
-          expected_deaths[t,j] += expected_riskset[t,j,i] * lambda1[i];
+          expected_deaths[t,j] += expected_riskset[t,j,i] * lambda1[i] * exp(delta_death_hubei *w[j]);
           expected_recovereds[t,j] += expected_riskset[t,j,i] * 
-                lambda2[i] * (dr)^w[j] + 0.0001;
+                lambda2[i] * exp(delta_recover_hubei * w[j]);
         }
       }
       
@@ -376,6 +346,9 @@ for (j in 1:L) {
 
 
 model {
+
+  delta_death_hubei ~ normal(0,.5); //somewhat stron prior around 0
+  delta_recover_hubei ~ normal(0,.5); //somewhat stron prior around 0
   //definitely can be made more effcient.
   for (j in 1:L) {
     for (t in 1:T) {
@@ -438,14 +411,22 @@ solve_deaths <- function(alpha, lambda1s, lambda2s) {
 
 chains <- extract(cfrmdl_erlang_res)
 rho_erlang <- vector(length=length(chains$alpha))
+rho_erlang_hubei <- vector(length=length(chains$alpha))
 
 lambda1 <- as.matrix(chains$lambda1)
 lambda2 <- as.matrix(chains$lambda2)
 for(i in 1:length(chains$alpha)){
   rho_erlang[i] <- solve_deaths(chains$alpha[i], lambda1[i,], lambda2[i,])
+  
+  rho_erlang_hubei[i] <- solve_deaths(chains$alpha[i], 
+                                      lambda1[i,]*exp(chains$delta_death_hubei[i]), 
+                                      lambda2[i,]*exp(chains$delta_recover_hubei[i]))
 }
 
 
 median(rho_erlang)
 quantile(rho_erlang, probs = c(.025, .975))
+
+median(rho_erlang_hubei)
+quantile(rho_erlang_hubei, probs = c(.025, .975))
 ```
