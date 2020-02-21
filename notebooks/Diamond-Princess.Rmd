@@ -327,19 +327,36 @@ R0_shadow_dist_plot <- R_sims %>%
               R_lb=quantile(R_est, probs=.025, na.rm=T),
               R_ub=quantile(R_est, probs=.975, na.rm=T)) %>% 
     ungroup() %>% 
-    mutate(gray_out=if_else(type=="SARS_est", dates>=ymd("2020-02-05"),
-                            dates>=ymd("2020-02-08"))) %>% 
+    mutate(gray_out=if_else(type=="SARS_est",
+                            dates>=ymd_hms("2020-02-05 00:00:00"),
+                            dates>=ymd_hms("2020-02-08 00:00:00")),
+           dates=as_datetime(dates)) %>% 
+    bind_rows(R_sims %>% 
+                  pivot_longer(cols=c(SARS_est, ncov_est),
+                               names_to="type",
+                               values_to="R_est") %>% 
+                  group_by(dates, type) %>% 
+                  summarise(R_mean=mean(R_est, na.rm=T),
+                            R_lb=quantile(R_est, probs=.025, na.rm=T),
+                            R_ub=quantile(R_est, probs=.975, na.rm=T)) %>% 
+                  ungroup() %>% 
+                  filter((type=="SARS_est" & dates==ymd("2020-02-05")) | 
+                             (type=="ncov_est" & dates==ymd("2020-02-08"))) %>% 
+                  mutate(dates=as_datetime(dates) - seconds(1),
+                         gray_out=F)) %>% 
     ggplot(aes(x=dates, color=type, fill=type)) +
-    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
-    geom_vline(aes(xintercept=ymd("2020-02-11")), linetype="dashed") +
-    geom_text(aes(x=ymd("2020-02-13"), y=32, label="Protocol\nchange"),
+    geom_vline(aes(xintercept=ymd_hms("2020-02-05 00:00:00")), linetype="dashed") +
+    geom_vline(aes(xintercept=ymd_hms("2020-02-11 00:00:00")), linetype="dashed") +
+    geom_vline(aes(xintercept=ymd_hms("2020-02-16 00:00:00")), linetype="dashed") +
+    geom_text(aes(x=ymd_hms("2020-02-13 00:00:00"), y=32,
+                  label="Protocol\nchange"),
               color="black") +
-    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
     geom_hline(aes(yintercept=1), linetype="dashed") +
     geom_ribbon(aes(ymin=R_lb, ymax=R_ub, alpha=gray_out)) +
     geom_line(aes(y=R_mean, linetype=gray_out)) +
-    scale_x_date("",
-                 limits=c(ymd("2020-01-21"),ymd("2020-02-20")),
+    scale_x_datetime("",
+                 limits=c(ymd_hms("2020-01-21 00:00:00"),
+                          ymd_hms("2020-02-20 23:59:00")),
                  date_breaks="2 days",
                  date_labels="%b %d") +
     scale_y_log10("R, log scale",
@@ -349,8 +366,8 @@ R0_shadow_dist_plot <- R_sims %>%
                        values=cbbPalette[6:7],
                        labels=c("COVID-19", "SARS")) +
     scale_fill_manual("Serial interval",
-                       values=cbbPalette[6:7],
-                       labels=c("COVID-19", "SARS")) +
+                      values=cbbPalette[6:7],
+                      labels=c("COVID-19", "SARS")) +
     scale_alpha_manual(values=c(0.5,0.1),
                        guide=F) +
     scale_linetype_discrete(guide=F) +
@@ -965,9 +982,9 @@ dist_inf_plot <- R_sims %>%
 grid.arrange(R0_shadow_dist_plot, dist_inf_plot, ncol=1)
 ```
 
-Under these assumptions, we see that the peak reproduction number (and thus transmission) likely occurred prior to quarantine.
+The faded lines and bars show where there is missing asymptomatic data, which would affect those estimates.
 
+Under these assumptions, we see that the peak reproduction number (and thus transmission) may have occurred prior to quarantine and that the quarantine may have helped in reducing the spread of COVID-19.
+However, even without the asymptomatic cases, the reproduction number doesn't fall below 1 until Feb 12 at the earliest.
 
-
-The National Institute of Infectious Diseases [stated](https://www.japantimes.co.jp/news/2020/02/20/national/coronavirus-diamond-princess-before-quarantine/) that they would release their own report soon and noted that 33 individuals were symptomatic prior to Feb 5th, which was not in the original surveillance data.
 As more information becomes available we will update this analysis.
