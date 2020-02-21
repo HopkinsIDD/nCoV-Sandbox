@@ -1,6 +1,5 @@
 ---
 title: "What happened on the Diamond Princess?"
-subtitle: "We don't know for sure, but here are some possibilities"
 output: html_document
 ---
 
@@ -40,7 +39,7 @@ On Feb 20, the Japanese National Institute of Infectious Diseases [reported](htt
 
 Based on the publicly reported surveillance data, we estimated the daily reproduction number on the cruise, i.e. the number of people that each infected person was infecting each day.
 A reproduction number above 1 indicates that the virus is spreading, while below 1 indicates that the virus is dying out.
-We use a variety of assumptions and observe how these assumptions change our estimates.
+We observe how estimates change when using the raw data and under a set of assumptions.
 
 ## Data overview
 
@@ -328,7 +327,8 @@ R0_shadow_dist_plot <- R_sims %>%
               R_lb=quantile(R_est, probs=.025, na.rm=T),
               R_ub=quantile(R_est, probs=.975, na.rm=T)) %>% 
     ungroup() %>% 
-    mutate(dates=if_else(type=="SARS_est", dates-8, dates-5)) %>% 
+    mutate(gray_out=if_else(type=="SARS_est", dates>=ymd("2020-02-05"),
+                            dates>=ymd("2020-02-08"))) %>% 
     ggplot(aes(x=dates, color=type, fill=type)) +
     geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
     geom_vline(aes(xintercept=ymd("2020-02-11")), linetype="dashed") +
@@ -336,8 +336,8 @@ R0_shadow_dist_plot <- R_sims %>%
               color="black") +
     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
     geom_hline(aes(yintercept=1), linetype="dashed") +
-    geom_ribbon(aes(ymin=R_lb, ymax=R_ub), alpha=0.4) +
-    geom_line(aes(y=R_mean)) +
+    geom_ribbon(aes(ymin=R_lb, ymax=R_ub, alpha=gray_out)) +
+    geom_line(aes(y=R_mean, linetype=gray_out)) +
     scale_x_date("",
                  limits=c(ymd("2020-01-21"),ymd("2020-02-20")),
                  date_breaks="2 days",
@@ -351,6 +351,9 @@ R0_shadow_dist_plot <- R_sims %>%
     scale_fill_manual("Serial interval",
                        values=cbbPalette[6:7],
                        labels=c("COVID-19", "SARS")) +
+    scale_alpha_manual(values=c(0.5,0.1),
+                       guide=F) +
+    scale_linetype_discrete(guide=F) +
     theme_bw() +
     ggtitle("Estimates with allocated symptom onsets, asymptomatics removed") +
     coord_cartesian(ylim=c(0.25, 64)) +
