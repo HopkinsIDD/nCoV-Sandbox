@@ -15,6 +15,8 @@ library(tidyverse)
 library(lubridate)
 library(EpiEstim)
 library(gridExtra)
+library(doMC)
+registerDoMC(detectCores()-2)
 ## color blind palette
 cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
@@ -449,4 +451,233 @@ bind_rows(plot_dat,
 
 Moving the symptomatic cases 5 days earlier, results in an earlier peak in R, as we would expect.
 The values for each day up to Feb 12 in the original analysis are shifted 5 days early.
+Out of luck or circumstance, there again were very few confirmed cases on Feb 8 and the estimate falls below 1.
+However, instead of rebounding to 6, the estimates stay below 3 for the rest of the way.
+
+Instead of moving every symptomatic case early by a constant amount, we can distribute "shadows" according to a distribution.
+We apply this to all infections, symptomatic and asymptomatic, because otherwise we're assuming that the asymptomatic infections have just begun, when they may have been going for a while.
+We'll do a test run here, then we'll run 1,000 simulations and take the average.
+
+```{r Rt-shadow-dist}
+set.seed(1)
+distribute_case_delays <- function(dp_dat){
+    date_vec <- ymd("2020-01-01")
+    for(i in 1:nrow(dp_dat)){
+        if(dp_dat$daily_infected[i]==0){
+            next
+        }
+        tmp <- rep(dp_dat$dates[i], dp_dat$daily_infected[i])
+        date_vec <- c(date_vec, tmp)
+    }
+    date_vec <- date_vec[-1]
+    delays <- rlnorm(length(date_vec), 1.63, 0.36) %>% round()
+    new_dates <- pmax(date_vec-delays, ymd("2020-01-20"))
+    new_dat <- tibble(dates=seq(min(new_dates), max(new_dates), by="days")) %>% 
+        left_join(tibble(dates=new_dates) %>% 
+                      group_by(dates) %>% 
+                      summarize(daily_shadow=n())) %>% 
+        full_join(dp_dat) %>% 
+        mutate(daily_shadow=ifelse(is.na(daily_shadow),
+                                   0, daily_shadow),
+               daily_asym=ifelse(is.na(daily_asym),
+                                   0, daily_asym),
+               daily_infect_shadow=daily_asym+daily_shadow)
+    return(new_dat)
+}
+shadow_dat_dist <- distribute_case_delays(dp_dat)
+
+shadow_dat_dist %>% 
+    select(dates, original=daily_infected, simulated=daily_infect_shadow) %>% 
+    pivot_longer(cols=c(original, simulated),
+                 names_to="case_type",
+                 values_to="number") %>% 
+    ggplot() +
+    geom_bar(aes(x=dates, y=number, fill=case_type),
+             stat="identity", position="dodge") +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-03"), y=70, label="Quarantine\nstarts"),
+    #           color="black") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-14"), y=70, label="US\nevacuation"),
+    #           color="black") +
+    scale_x_date("",
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_continuous("Number of cases") +
+    scale_fill_manual("",
+                      labels=c("Original", "Simulated"),
+                      values=cbbPalette[-1]) +
+    theme_bw() +
+    theme(axis.text.y=element_text(color="black"),
+          axis.title.x=element_blank(),
+          axis.title.y=element_text(vjust=0),
+          axis.text.x=element_blank(),
+          legend.position=c(.15, .5))
+R_SARS_shadow_dist <- estimate_R(shadow_dat_dist %>%
+                                     select(dates, I=daily_infect_shadow),
+                            method="parametric_si",
+                            config=make_config(
+                                list(mean_si=8.4,
+                                     std_si=3.8,
+                                     t_start=seq(2,nrow(shadow_dat_dist)),
+                                     t_end=seq(2,nrow(shadow_dat_dist)))))
+# knitr::kable(R_SARS_shadow_dist$R[,c(1,3,5,8,11)], digits=2)
+
+
+R_ncov_shadow_dist <- estimate_R(shadow_dat_dist %>%
+                                     select(dates, I=daily_infect_shadow),
+                            method="parametric_si",
+                            config=make_config(list(
+                                mean_si=4.4,
+                                std_si=3.2,
+                                t_start=seq(2,nrow(shadow_dat_dist)),
+                                t_end=seq(2,nrow(shadow_dat_dist)))))
+
+# knitr::kable(R_ncov_shadow_dist$R[,c(1,3,5,8,11)], digits=2)
+
+R_eyeball_shadow_dist <- estimate_R(shadow_dat_dist %>%
+                                        select(dates, I=daily_infect_shadow),
+                               method="parametric_si",
+                               config=make_config(list(
+                                   mean_si=3,
+                                   std_si=3.2,
+                                   t_start=seq(2,nrow(shadow_dat_dist)),
+                                   t_end=seq(2,nrow(shadow_dat_dist)))))
+
+# knitr::kable(R_eyeball_shadow_dist$R[,c(1,3,5,8,11)], digits=2)
+
+shadow_plot_dat_dist <- tibble(dates=c(R_SARS_shadow_dist$dates[-1],
+                                  R_ncov_shadow_dist$dates[-1],
+                                  R_eyeball_shadow_dist$dates[-1]),
+                          R_mean=c(R_SARS_shadow_dist$R$`Mean(R)`,
+                                   R_ncov_shadow_dist$R$`Mean(R)`,
+                                   R_eyeball_shadow_dist$R$`Mean(R)`),
+                          R_lb=c(R_SARS_shadow_dist$R$`Quantile.0.025(R)`,
+                                 R_ncov_shadow_dist$R$`Quantile.0.025(R)`,
+                                 R_eyeball_shadow_dist$R$`Quantile.0.025(R)`),
+                          R_ub=c(R_SARS_shadow_dist$R$`Quantile.0.975(R)`,
+                                 R_ncov_shadow_dist$R$`Quantile.0.975(R)`,
+                                 R_eyeball_shadow_dist$R$`Quantile.0.975(R)`),
+                          gen_time=c(rep("SARS", nrow(R_SARS_shadow_dist$R)),
+                                     rep("COVID-19", nrow(R_ncov_shadow_dist$R)),
+                                     rep("Eyeball", nrow(R_eyeball_shadow_dist$R))),
+                          analysis="early") %>% 
+    left_join(shadow_dat_dist %>% select(dates, daily_infect_shadow)) %>% 
+    filter(daily_infect_shadow>0 | R_mean>0.2, gen_time !="Eyeball")
+
+ggplot(data=shadow_plot_dat_dist, aes(x=dates, color=as.factor(gen_time))) +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
+    #           color="black") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
+    #           color="black") +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
+    geom_line(aes(y=R_mean)) +
+    # geom_line(aes(y=R_lb), linetype="dashed") +
+    # geom_line(aes(y=R_ub), linetype="dashed") +
+    scale_x_date("",
+                 # limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_log10("Time-varying reproduction number, R",
+                  breaks=2^seq(-10,10,2)) +
+    scale_color_manual("Generation Time",
+                       values=cbbPalette[-1]) +
+    theme_bw() +
+    theme(axis.text.y=element_text(color="black"),
+          axis.text.x=element_text(color="black", angle=45, hjust=1),
+          legend.position="bottom")
+# 
+# ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
+#     geom_smooth(aes(y=R_mean), se=F) +
+#     geom_smooth(aes(y=R_lb), linetype="dashed", se=F) +
+#     geom_smooth(aes(y=R_ub), linetype="dashed", se=F) +
+#     scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
+#     scale_y_log10("R") +
+#     scale_color_discrete("Generation Time") +
+#     theme_bw() +
+#     theme(axis.text=element_text(color="black"),
+#           legend.position=c(0.75, 0.75))
+
+
+# grid.arrange(R0_plot, symptomatic_plot, test_plot, ncol=1)
+
+bind_rows(plot_dat,
+          # sym_plot_dat,
+          shadow_plot_dat_dist) %>%
+    filter(daily_infected>0 | R_mean>0.2, gen_time=="COVID-19") %>% 
+    ggplot(aes(x=dates, color=analysis)) +
+    geom_line(aes(y=R_mean)) +
+    # geom_line(aes(y=R_lb), linetype="dashed") +
+    # geom_line(aes(y=R_ub), linetype="dashed") +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
+    scale_x_date("",
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_log10("Time-varying reproduction number, R",
+                  breaks=2^seq(-10,10,2)) +
+    scale_color_manual("Analysis",
+                       breaks=c("overall", "symptomatic", "early"),
+                       values=cbbPalette[c(8, 6, 7)]) +
+    ggtitle("Comparison of analyses using COVID-19 estimates") +
+    theme_bw() +
+    theme(axis.text.y=element_text(color="black"),
+          axis.text.x=element_text(color="black", angle=45, hjust=1),
+          legend.position="bottom")
+```
+
+This run makes the initial outbreak look much less severe and the post-quarantine period not look great (it isn't less than 1 for very long), but not clearly indicative of a superspreading event.
+Let's see what happens when we run this 1,000 times:
+
+
+```{r Rt-shadow-dist-1000}
+R_sims <- foreach(i=1:1000, .combine=rbind) %dopar%{
+    set.seed(i)
+    tmp_dist <- distribute_case_delays(dp_dat)
+    tmp_R <- estimate_R(tmp_dist %>%
+                            select(dates, I=daily_infect_shadow),
+                        method="parametric_si",
+                        config=make_config(list(
+                            mean_si=4.4,
+                            std_si=3.2,
+                            t_start=seq(2,nrow(tmp_dist)),
+                            t_end=seq(2,nrow(tmp_dist)))))
+    return(tibble(sim=i,
+                  dates=tmp_R$dates[-1],
+                  R_est=tmp_R$R$`Mean(R)`))
+}
+
+R_sims %>% 
+    group_by(dates) %>% 
+    summarise(obs=sum(!is.na(R_est)),
+              R_mean=mean(R_est, na.rm=T),
+              R_lb=quantile(R_est, probs=.025, na.rm=T),
+              R_ub=quantile(R_est, probs=.975, na.rm=T)) %>% 
+    ggplot(aes(x=dates, y=R_mean)) +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
+    #           color="black") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
+    #           color="black") +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
+    geom_ribbon(aes(ymin=R_lb, ymax=R_ub), alpha=0.5) +
+    geom_line() +
+    # geom_line(aes(y=R_lb), linetype="dashed") +
+    # geom_line(aes(y=R_ub), linetype="dashed") +
+    scale_x_date("",
+                 # limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_log10("Time-varying reproduction number, R",
+                  breaks=2^seq(-10,10,2)) +
+    theme_bw() +
+    coord_cartesian(ylim=c(0.25, 16)) +
+    theme(axis.text.y=element_text(color="black"),
+          axis.text.x=element_text(color="black", angle=45, hjust=1),
+          legend.position="bottom")
+```
 
