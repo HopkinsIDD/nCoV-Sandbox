@@ -1,7 +1,6 @@
 ---
-title: "Diamond Princess analysis"
-author: "Stephen Lauer and Justin Lessler"
-date: "2/20/2020"
+title: "What happened on the Diamond Princess?"
+subtitle: "We don't know for sure, but here are some possibilities"
 output: html_document
 ---
 
@@ -34,12 +33,22 @@ dp_dat <- read_csv("data/diamond-princess.csv") %>%
            daily_sym=daily_infected-daily_asym)
 ```
 
+The Diamond Princess cruise was placed under quarantine on February 5th after a former passenger (who was on the boat from January 20-25) tested positive for COVID-19 in Hong Kong on February 1st.
+During the quarantine, which ended on February 19th, a subset of passengers were tested for COVID-19 every day.
+As infection numbers rose, many people questioned the efficacy of the quarantine.
+On February 20th, the Japanese National Institute of Infectious Diseases [reported](https://www.japantimes.co.jp/news/2020/02/20/national/coronavirus-diamond-princess-before-quarantine/) that the majority of transmission occurred prior to the quarantine.
+
+Based on the publicly reported surveillance data, we estimated the daily reproduction number on the cruise, i.e. the number of people that each infected person was infecting each day.
+A reproduction number above 1 indicates that the virus is spreading, while below 1 indicates that the virus is dying out.
+We use a variety of assumptions and observe how these assumptions change our estimates.
+
 ## Data overview
 
 The Diamond Princess data consists of a dates and the cumulative tests, positive tests, and "asymptomatic" cases for those dates.
-"Asympomatic" could also refer to "not-yet-symptomatic" cases.
-Asymptomatics are not formally counted until Feb 15 but it is noted that there were 35 asymptomatic cases previously discovered, they are assigned to Feb 13.
-The first case that was detected in HK on Feb 1 (after staying on boat from Jan 20-25), is not included in the dataset (but is added in retrospectively).
+However, an "asymptomatic" case may merely be a case that has yet to develop symptoms, so that term should not be taken literally.
+Asymptomatic cases are not formally counted until Feb 15, at which time it was noted that there were 35 previously discovered asymptomatic cases, which we assigned to Feb 13.
+We don't know the testing protocol, but it appears that only symptomatic individuals were tested early on, while everyone was being tested near the end of quarantine.
+This results in more symptomatic cases at the beginning and more asymptomatic cases at the end.
 
 ```{r data-plots}
 data_plot <- dp_dat %>% 
@@ -69,7 +78,8 @@ symptomatic_plot <- ggplot(data=data_plot) +
           axis.title.x=element_blank(),
           axis.title.y=element_text(vjust=0),
           axis.text.x=element_blank(),
-          legend.position=c(.15, .5))
+          legend.position=c(.15, .5),
+          legend.background=element_blank())
 
 test_plot <- ggplot(data=dp_dat) +
     geom_bar(aes(x=dates, y=daily_test),
@@ -84,16 +94,18 @@ test_plot <- ggplot(data=dp_dat) +
     theme(axis.text.y=element_text(color="black"),
           axis.text.x=element_text(color="black", angle=45, hjust=1))
 
-grid.arrange(symptomatic_plot, test_plot, ncol=1)
+# grid.arrange(symptomatic_plot, test_plot, ncol=1)
 ```
 
 ## Using all cases
 
-To find R_t, we need to estimate the mean and standard deviation of the serial interval.
-We use two estimates:
+We use the `EpiEstim` package in R for our analysis, which requires dates, number of infections per date, and an estimate of the serial interval.
+The serial interval is the time between the infections in a transmission chain, e.g. if I infect you with a disease, then it's the time between my infection and your infection.
+This is frequently estimated by measuring the time between symptom onset times.
+For this analysis, we use two serial interval estimates:
 
-1. The estimate from SARS (mean: 8.4, sd: 3.8)
-2. An early estimate for COVID-19 (mean: 4.4, sd: 3.2)
+1. The estimate from [SARS](https://science.sciencemag.org/content/300/5627/1966) (mean: 8.4 days, sd: 3.8)
+2. An early estimate for [COVID-19](https://www.medrxiv.org/content/10.1101/2020.02.03.20019497v2.full.pdf+html) (mean: 4.7, sd: 2.9)
 <!-- 3. An eyeball estimate from our data (mean: 3.0, sd: 3.2) -->
 
 We'll start out by looking at all of the data, including symptomatic and asymptomatic cases.
@@ -151,28 +163,34 @@ plot_dat <- tibble(dates=c(R_est_SARS$dates[-1],
     left_join(dp_dat %>% select(dates, daily_infected)) %>% 
     filter(daily_infected>0 | R_mean>0.2, gen_time !="Eyeball")
 
-ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
+R0_plot <- ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
     geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
-    geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
-              color="black") +
+    # geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
+    #           color="black") +
     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
-    geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
-              color="black") +
+    # geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
+    #           color="black") +
     geom_hline(aes(yintercept=1), linetype="dashed") +
     geom_line(aes(y=R_mean)) +
     # geom_line(aes(y=R_lb), linetype="dashed") +
     # geom_line(aes(y=R_ub), linetype="dashed") +
     scale_x_date("",
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
                  date_breaks="2 days",
                  date_labels="%b %d") +
-    scale_y_log10("Time-varying reproduction number, R",
-                  breaks=2^seq(-10,10,2)) +
-    scale_color_manual("Generation Time",
-                       values=cbbPalette[-1]) +
+    scale_y_log10("R, log scale",
+                  breaks=2^seq(-2,6,2),
+                  labels=c("1/4", "1", "4", "16", "64")) +
+    scale_color_manual("Serial interval",
+                       values=cbbPalette[6:7]) +
     theme_bw() +
+    ggtitle("Estimates using all confirmed cases") +
     theme(axis.text.y=element_text(color="black"),
-          axis.text.x=element_text(color="black", angle=45, hjust=1),
-          legend.position="bottom")
+          # axis.text.x=element_text(color="black", angle=45, hjust=1),
+          axis.text.x=element_blank(),
+          axis.title.x=element_blank(),
+          legend.position=c(0.15, 0.6),
+          legend.background=element_blank())
 # 
 # ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
 #     geom_smooth(aes(y=R_mean), se=F) +
@@ -180,21 +198,27 @@ ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
 #     geom_smooth(aes(y=R_ub), linetype="dashed", se=F) +
 #     scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
 #     scale_y_log10("R") +
-#     scale_color_discrete("Generation Time") +
+#     scale_color_discrete("Serial interval") +
 #     theme_bw() +
 #     theme(axis.text=element_text(color="black"),
 #           legend.position=c(0.75, 0.75))
 
 
-# grid.arrange(R0_plot, symptomatic_plot, test_plot, ncol=1)
+grid.arrange(R0_plot, symptomatic_plot, test_plot,
+             ncol=1)
 ```
 
 When using the SARS serial interval estimate, there is a large spike in the reproductive number right after the outbreak.
-With the COVID-19 estimate, the reproductive number falls below 1 three days after the implementation of the quarantine (Feb 8), however this may be due to the fact that only 6 people were tested that day, 3 of whom were positive.
+A reproduction number of 64 would certainly qualify as a super-spreading event, but there are reasons to be skeptical of using the SARS serial interval.
+The serial interval is impacted by the contact rate; if a person infrequently interacts with others, the time between their symptom onset and their contacts will likely be longer.
+On a cruise with swimming pools, buffets, and a [casino](https://www.princess.com/ships-and-experience/onboard-experience/activities/casino/), contact rates may be higher and thus the serial interval would be shorter.
+We'll think of the SARS estimate as a worst-case scenario.
+
+With the COVID-19 estimate, the reproductive number falls below 1 three days after the implementation of the quarantine (Feb 8), however this may be due to the fact that there was very little testing done on the 8th or 9th.
 The reproductive number rebounded to 6 on Feb 10 before settling in between 2-3 until falling below 2 on Feb 18.
 
-However, this analysis probably biases the R_t value high.
-The serial interval is the time between the symptom onset of a primary case and the symptom onset of a secondary case.
+However, this analysis probably biases the reproduction value high.
+The serial interval is often estimated as the time between the symptom onset of a primary case and the symptom onset of a secondary case.
 Since these "asymptomatic" cases could be symptomatic cases that have not presented symptoms yet, then we are violating that definition.
 By including more cases, we are inflating the amount of transmission and thus reproduction number would be biased high.
 
@@ -255,13 +279,13 @@ sym_plot_dat <- tibble(dates=c(R_SARS_sym$dates[-1],
     left_join(dp_dat %>% select(dates, daily_infected)) %>% 
     filter(daily_infected>0 | R_mean>0.2, gen_time !="Eyeball")
 
-ggplot(data=sym_plot_dat, aes(x=dates, color=as.factor(gen_time))) +
+R0_sym_plot <- ggplot(data=sym_plot_dat, aes(x=dates, color=as.factor(gen_time))) +
     geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
-    geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
-              color="black") +
+    # geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
+    #           color="black") +
     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
-    geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
-              color="black") +
+    # geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
+    #           color="black") +
     geom_hline(aes(yintercept=1), linetype="dashed") +
     geom_line(aes(y=R_mean)) +
     # geom_line(aes(y=R_lb), linetype="dashed") +
@@ -270,62 +294,90 @@ ggplot(data=sym_plot_dat, aes(x=dates, color=as.factor(gen_time))) +
                  limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
                  date_breaks="2 days",
                  date_labels="%b %d") +
-    scale_y_log10("Time-varying reproduction number, R",
-                  breaks=2^seq(-10,10,2)) +
-    scale_color_manual("Generation Time",
-                       values=cbbPalette[-1]) +
+    scale_y_log10("R, log scale",
+                  breaks=2^seq(-2,6,2),
+                  labels=c("1/4", "1", "4", "16", "64")) +
+    scale_color_manual("Serial interval",
+                       values=cbbPalette[6:7]) +
+    theme_bw() +
+    ggtitle("Estimates using all symptomatic cases") +
+    theme(axis.text.y=element_text(color="black"),
+          # axis.text.x=element_text(color="black", angle=45, hjust=1),
+          axis.text.x=element_blank(),
+          axis.title.x=element_blank(),
+          legend.position=c(0.15, 0.6),
+          legend.background=element_blank())
+
+symptomatic_only_plot <- data_plot %>% filter(case_type=="daily_sym") %>% 
+    ggplot() +
+    geom_bar(aes(x=dates, y=number),
+             stat="identity", position="dodge") +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-03"), y=70, label="Quarantine\nstarts"),
+    #           color="black") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-14"), y=70, label="US\nevacuation"),
+    #           color="black") +
+    scale_x_date("",
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_continuous("Number of symptomatic cases") +
+    scale_fill_manual("Case type",
+                      labels=c("Asymptomatic", "Symptomatic"),
+                      values=cbbPalette[-1]) +
     theme_bw() +
     theme(axis.text.y=element_text(color="black"),
+          axis.title.x=element_blank(),
+          axis.title.y=element_text(vjust=0),
           axis.text.x=element_text(color="black", angle=45, hjust=1),
-          legend.position="bottom")
-# 
-# ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
-#     geom_smooth(aes(y=R_mean), se=F) +
-#     geom_smooth(aes(y=R_lb), linetype="dashed", se=F) +
-#     geom_smooth(aes(y=R_ub), linetype="dashed", se=F) +
-#     scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
-#     scale_y_log10("R") +
-#     scale_color_discrete("Generation Time") +
-#     theme_bw() +
-#     theme(axis.text=element_text(color="black"),
-#           legend.position=c(0.75, 0.75))
+          legend.position=c(.15, .5),
+          legend.background=element_blank())
 
 
-# grid.arrange(R0_plot, symptomatic_plot, test_plot, ncol=1)
-
-bind_rows(plot_dat, sym_plot_dat) %>%
+R0_compare_plot <- bind_rows(plot_dat, sym_plot_dat) %>%
     filter(daily_infected>0 | R_mean>0.2, gen_time=="COVID-19") %>% 
     ggplot(aes(x=dates, color=analysis)) +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
+    #           color="black") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
+    #           color="black") +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
     geom_line(aes(y=R_mean)) +
     # geom_line(aes(y=R_lb), linetype="dashed") +
     # geom_line(aes(y=R_ub), linetype="dashed") +
-    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
-    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
-    geom_hline(aes(yintercept=1), linetype="dashed") +
     scale_x_date("",
                  limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
                  date_breaks="2 days",
                  date_labels="%b %d") +
-    scale_y_log10("Time-varying reproduction number, R",
-                  breaks=2^seq(-10,10,2)) +
+    scale_y_log10("R, log scale",
+                  breaks=2^seq(-2,6,2),
+                  labels=c("1/4", "1", "4", "16", "64")) +
     scale_color_manual("Analysis",
                        values=cbbPalette[c(6:8)]) +
-    ggtitle("Comparison of analyses using COVID-19 estimates") +
     theme_bw() +
+    ggtitle("Comparison of estimates using COVID-19 serial intervals") +
     theme(axis.text.y=element_text(color="black"),
-          axis.text.x=element_text(color="black", angle=45, hjust=1),
-          legend.position="bottom")
+          # axis.text.x=element_text(color="black", angle=45, hjust=1),
+          axis.text.x=element_blank(),
+          axis.title.x=element_blank(),
+          legend.position=c(0.15, 0.6),
+          legend.background=element_blank())
+
+grid.arrange(R0_compare_plot, symptomatic_only_plot, ncol=1)
 ```
 
-Since the "asymptomatic" cases are concentrated at the end, that's where we see the difference in the estimates.
+Since the asymptomatic cases are concentrated at the end, that's where we see the difference in the estimates.
 While we still observe the bounce on Feb 10, the estimates call below 1 again on Feb 13 and the average stays below 2 for the remainder of the crisis.
 
-Of course, when we leave out asymptomatic cases and truncate the data on Feb 19 then we are ignoring a large portion of the transmission.
+Of course, when we leave out asymptomatic cases and truncate the data on Feb 20 then we are ignoring a large portion of the transmission.
 Let's see if we can account for these cases in a more intelligent manner.
 
 ## Putting symptomatic cases on asymptomatic timeline
 
-Instead of treating the "asymptomatic" cases as symptomatic or not, we could use adjust symptomatic cases earlier so that they are comparable to asymptomatic cases.
+Instead of treating the asymptomatic cases as symptomatic or not, we could use adjust symptomatic cases earlier so that they are comparable to asymptomatic cases.
+Here we reallocate the symptomatic cases based on their incubation period, which is the time between exposure to infection and symptom onset.
 In an [earlier paper](https://www.medrxiv.org/content/10.1101/2020.02.02.20020016v1), we estimated that the median incubation time for COVID-19 is 5.2 days.
 Thus, we first try moving symptomatic cases 5 days earlier:
 
@@ -385,7 +437,8 @@ shadow_plot_dat <- tibble(dates=c(R_SARS_shadow$dates[-1],
     left_join(shadow_dat %>% select(dates, daily_infect_shadow)) %>% 
     filter(daily_infect_shadow>0 | R_mean>0.2, gen_time !="Eyeball")
 
-ggplot(data=shadow_plot_dat, aes(x=dates, color=as.factor(gen_time))) +
+R0_shadow_plot <- ggplot(data=shadow_plot_dat,
+                         aes(x=dates, color=as.factor(gen_time))) +
     geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
     # geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
     #           color="black") +
@@ -397,66 +450,95 @@ ggplot(data=shadow_plot_dat, aes(x=dates, color=as.factor(gen_time))) +
     # geom_line(aes(y=R_lb), linetype="dashed") +
     # geom_line(aes(y=R_ub), linetype="dashed") +
     scale_x_date("",
-                 # limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
                  date_breaks="2 days",
                  date_labels="%b %d") +
-    scale_y_log10("Time-varying reproduction number, R",
-                  breaks=2^seq(-10,10,2)) +
-    scale_color_manual("Generation Time",
-                       values=cbbPalette[-1]) +
+    scale_y_log10("R, log scale",
+                  breaks=2^seq(-2,6,2),
+                  labels=c("1/4", "1", "4", "16", "64")) +
+    scale_color_manual("Serial interval",
+                       values=cbbPalette[6:7]) +
+    theme_bw() +
+    ggtitle("Estimates on asymptomatic timeline") +
+    theme(axis.text.y=element_text(color="black"),
+          # axis.text.x=element_text(color="black", angle=45, hjust=1),
+          axis.text.x=element_blank(),
+          axis.title.x=element_blank(),
+          legend.position=c(0.15, 0.6),
+          legend.background=element_blank())
+
+asymptomatic_tl_plot <- ggplot(data=shadow_dat) +
+    geom_bar(aes(x=dates, y=daily_infect_shadow),
+             stat="identity", position="dodge") +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-03"), y=70, label="Quarantine\nstarts"),
+    #           color="black") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-14"), y=70, label="US\nevacuation"),
+    #           color="black") +
+    scale_x_date("",
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_continuous("Number of cases, reallocated") +
+    scale_fill_manual("Case type",
+                      labels=c("Asymptomatic", "Symptomatic"),
+                      values=cbbPalette[-1]) +
     theme_bw() +
     theme(axis.text.y=element_text(color="black"),
+          axis.title.x=element_blank(),
+          axis.title.y=element_text(vjust=0),
           axis.text.x=element_text(color="black", angle=45, hjust=1),
-          legend.position="bottom")
-# 
-# ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
-#     geom_smooth(aes(y=R_mean), se=F) +
-#     geom_smooth(aes(y=R_lb), linetype="dashed", se=F) +
-#     geom_smooth(aes(y=R_ub), linetype="dashed", se=F) +
-#     scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
-#     scale_y_log10("R") +
-#     scale_color_discrete("Generation Time") +
-#     theme_bw() +
-#     theme(axis.text=element_text(color="black"),
-#           legend.position=c(0.75, 0.75))
+          legend.position=c(.15, .5),
+          legend.background=element_blank())
+
 
 
 # grid.arrange(R0_plot, symptomatic_plot, test_plot, ncol=1)
 
-bind_rows(plot_dat,
+R0_compare_shadow_plot <- bind_rows(plot_dat,
           # sym_plot_dat,
           shadow_plot_dat) %>%
     filter(daily_infected>0 | R_mean>0.2, gen_time=="COVID-19") %>% 
     ggplot(aes(x=dates, color=analysis)) +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
+    #           color="black") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    # geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
+    #           color="black") +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
     geom_line(aes(y=R_mean)) +
     # geom_line(aes(y=R_lb), linetype="dashed") +
     # geom_line(aes(y=R_ub), linetype="dashed") +
-    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
-    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
-    geom_hline(aes(yintercept=1), linetype="dashed") +
     scale_x_date("",
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
                  date_breaks="2 days",
                  date_labels="%b %d") +
-    scale_y_log10("Time-varying reproduction number, R",
-                  breaks=2^seq(-10,10,2)) +
+    scale_y_log10("R, log scale",
+                  breaks=2^seq(-2,6,2),
+                  labels=c("1/4", "1", "4", "16", "64")) +
     scale_color_manual("Analysis",
-                       breaks=c("overall", "symptomatic", "early"),
-                       values=cbbPalette[c(8, 6, 7)]) +
-    ggtitle("Comparison of analyses using COVID-19 estimates") +
+                       values=cbbPalette[c(7:6)]) +
     theme_bw() +
+    ggtitle("Comparison of estimates using COVID-19 serial intervals") +
     theme(axis.text.y=element_text(color="black"),
-          axis.text.x=element_text(color="black", angle=45, hjust=1),
-          legend.position="bottom")
+          # axis.text.x=element_text(color="black", angle=45, hjust=1),
+          axis.text.x=element_blank(),
+          axis.title.x=element_blank(),
+          legend.position=c(0.1, 0.6),
+          legend.background=element_blank())
+
+grid.arrange(R0_compare_shadow_plot, asymptomatic_tl_plot, ncol=1)
 ```
 
 Moving the symptomatic cases 5 days earlier, results in an earlier peak in R, as we would expect.
 The values for each day up to Feb 12 in the original analysis are shifted 5 days early.
-Out of luck or circumstance, there again were very few confirmed cases on Feb 8 and the estimate falls below 1.
+Out of luck or circumstance, there again were very few confirmed cases on Feb 8 and 9 and the estimate falls below 1.
 However, instead of rebounding to 6, the estimates stay below 3 for the rest of the way.
 
-Instead of moving every symptomatic case early by a constant amount, we can distribute "shadows" according to a distribution.
-We apply this to all infections, symptomatic and asymptomatic, because otherwise we're assuming that the asymptomatic infections have just begun, when they may have been going for a while.
-We'll do a test run here, then we'll run 1,000 simulations and take the average.
+Instead of moving every symptomatic case early by a constant amount, we can reallocate the incubation period according to a distribution.
+This makes sense because incubation period vary in length from person to person, with some people having incubations as short as a day and others having incubation periods as long as 2-3 weeks.
+We apply this to all infections, symptomatic and asymptomatic; otherwise we'd be assuming that all of the asymptomatic infections had just begun, when they may have been going on for a while.
 
 ```{r Rt-shadow-dist}
 set.seed(1)
@@ -475,8 +557,8 @@ distribute_case_delays <- function(dp_dat){
     new_dat <- tibble(dates=seq(min(new_dates), max(new_dates), by="days")) %>% 
         left_join(tibble(dates=new_dates) %>% 
                       group_by(dates) %>% 
-                      summarize(daily_shadow=n())) %>% 
-        full_join(dp_dat) %>% 
+                      summarize(daily_shadow=n()), by="dates") %>% 
+        full_join(dp_dat, by="dates") %>% 
         mutate(daily_shadow=ifelse(is.na(daily_shadow),
                                    0, daily_shadow),
                daily_asym=ifelse(is.na(daily_asym),
@@ -484,154 +566,152 @@ distribute_case_delays <- function(dp_dat){
                daily_infect_shadow=daily_asym+daily_shadow)
     return(new_dat)
 }
-shadow_dat_dist <- distribute_case_delays(dp_dat)
-
-shadow_dat_dist %>% 
-    select(dates, original=daily_infected, simulated=daily_infect_shadow) %>% 
-    pivot_longer(cols=c(original, simulated),
-                 names_to="case_type",
-                 values_to="number") %>% 
-    ggplot() +
-    geom_bar(aes(x=dates, y=number, fill=case_type),
-             stat="identity", position="dodge") +
-    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
-    # geom_text(aes(x=ymd("2020-02-03"), y=70, label="Quarantine\nstarts"),
-    #           color="black") +
-    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
-    # geom_text(aes(x=ymd("2020-02-14"), y=70, label="US\nevacuation"),
-    #           color="black") +
-    scale_x_date("",
-                 date_breaks="2 days",
-                 date_labels="%b %d") +
-    scale_y_continuous("Number of cases") +
-    scale_fill_manual("",
-                      labels=c("Original", "Simulated"),
-                      values=cbbPalette[-1]) +
-    theme_bw() +
-    theme(axis.text.y=element_text(color="black"),
-          axis.title.x=element_blank(),
-          axis.title.y=element_text(vjust=0),
-          axis.text.x=element_blank(),
-          legend.position=c(.15, .5))
-R_SARS_shadow_dist <- estimate_R(shadow_dat_dist %>%
-                                     select(dates, I=daily_infect_shadow),
-                            method="parametric_si",
-                            config=make_config(
-                                list(mean_si=8.4,
-                                     std_si=3.8,
-                                     t_start=seq(2,nrow(shadow_dat_dist)),
-                                     t_end=seq(2,nrow(shadow_dat_dist)))))
-# knitr::kable(R_SARS_shadow_dist$R[,c(1,3,5,8,11)], digits=2)
-
-
-R_ncov_shadow_dist <- estimate_R(shadow_dat_dist %>%
-                                     select(dates, I=daily_infect_shadow),
-                            method="parametric_si",
-                            config=make_config(list(
-                                mean_si=4.4,
-                                std_si=3.2,
-                                t_start=seq(2,nrow(shadow_dat_dist)),
-                                t_end=seq(2,nrow(shadow_dat_dist)))))
-
-# knitr::kable(R_ncov_shadow_dist$R[,c(1,3,5,8,11)], digits=2)
-
-R_eyeball_shadow_dist <- estimate_R(shadow_dat_dist %>%
-                                        select(dates, I=daily_infect_shadow),
-                               method="parametric_si",
-                               config=make_config(list(
-                                   mean_si=3,
-                                   std_si=3.2,
-                                   t_start=seq(2,nrow(shadow_dat_dist)),
-                                   t_end=seq(2,nrow(shadow_dat_dist)))))
-
-# knitr::kable(R_eyeball_shadow_dist$R[,c(1,3,5,8,11)], digits=2)
-
-shadow_plot_dat_dist <- tibble(dates=c(R_SARS_shadow_dist$dates[-1],
-                                  R_ncov_shadow_dist$dates[-1],
-                                  R_eyeball_shadow_dist$dates[-1]),
-                          R_mean=c(R_SARS_shadow_dist$R$`Mean(R)`,
-                                   R_ncov_shadow_dist$R$`Mean(R)`,
-                                   R_eyeball_shadow_dist$R$`Mean(R)`),
-                          R_lb=c(R_SARS_shadow_dist$R$`Quantile.0.025(R)`,
-                                 R_ncov_shadow_dist$R$`Quantile.0.025(R)`,
-                                 R_eyeball_shadow_dist$R$`Quantile.0.025(R)`),
-                          R_ub=c(R_SARS_shadow_dist$R$`Quantile.0.975(R)`,
-                                 R_ncov_shadow_dist$R$`Quantile.0.975(R)`,
-                                 R_eyeball_shadow_dist$R$`Quantile.0.975(R)`),
-                          gen_time=c(rep("SARS", nrow(R_SARS_shadow_dist$R)),
-                                     rep("COVID-19", nrow(R_ncov_shadow_dist$R)),
-                                     rep("Eyeball", nrow(R_eyeball_shadow_dist$R))),
-                          analysis="early") %>% 
-    left_join(shadow_dat_dist %>% select(dates, daily_infect_shadow)) %>% 
-    filter(daily_infect_shadow>0 | R_mean>0.2, gen_time !="Eyeball")
-
-ggplot(data=shadow_plot_dat_dist, aes(x=dates, color=as.factor(gen_time))) +
-    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
-    # geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
-    #           color="black") +
-    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
-    # geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
-    #           color="black") +
-    geom_hline(aes(yintercept=1), linetype="dashed") +
-    geom_line(aes(y=R_mean)) +
-    # geom_line(aes(y=R_lb), linetype="dashed") +
-    # geom_line(aes(y=R_ub), linetype="dashed") +
-    scale_x_date("",
-                 # limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
-                 date_breaks="2 days",
-                 date_labels="%b %d") +
-    scale_y_log10("Time-varying reproduction number, R",
-                  breaks=2^seq(-10,10,2)) +
-    scale_color_manual("Generation Time",
-                       values=cbbPalette[-1]) +
-    theme_bw() +
-    theme(axis.text.y=element_text(color="black"),
-          axis.text.x=element_text(color="black", angle=45, hjust=1),
-          legend.position="bottom")
+# shadow_dat_dist <- distribute_case_delays(dp_dat)
 # 
-# ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
-#     geom_smooth(aes(y=R_mean), se=F) +
-#     geom_smooth(aes(y=R_lb), linetype="dashed", se=F) +
-#     geom_smooth(aes(y=R_ub), linetype="dashed", se=F) +
-#     scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
-#     scale_y_log10("R") +
-#     scale_color_discrete("Generation Time") +
+# shadow_dat_dist %>% 
+#     select(dates, original=daily_infected, simulated=daily_infect_shadow) %>% 
+#     pivot_longer(cols=c(original, simulated),
+#                  names_to="case_type",
+#                  values_to="number") %>% 
+#     ggplot() +
+#     geom_bar(aes(x=dates, y=number, fill=case_type),
+#              stat="identity", position="dodge") +
+#     geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+#     # geom_text(aes(x=ymd("2020-02-03"), y=70, label="Quarantine\nstarts"),
+#     #           color="black") +
+#     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+#     # geom_text(aes(x=ymd("2020-02-14"), y=70, label="US\nevacuation"),
+#     #           color="black") +
+#     scale_x_date("",
+#                  date_breaks="2 days",
+#                  date_labels="%b %d") +
+#     scale_y_continuous("Number of cases") +
+#     scale_fill_manual("",
+#                       labels=c("Original", "Simulated"),
+#                       values=cbbPalette[-1]) +
 #     theme_bw() +
-#     theme(axis.text=element_text(color="black"),
-#           legend.position=c(0.75, 0.75))
-
-
-# grid.arrange(R0_plot, symptomatic_plot, test_plot, ncol=1)
-
-bind_rows(plot_dat,
-          # sym_plot_dat,
-          shadow_plot_dat_dist) %>%
-    filter(daily_infected>0 | R_mean>0.2, gen_time=="COVID-19") %>% 
-    ggplot(aes(x=dates, color=analysis)) +
-    geom_line(aes(y=R_mean)) +
-    # geom_line(aes(y=R_lb), linetype="dashed") +
-    # geom_line(aes(y=R_ub), linetype="dashed") +
-    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
-    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
-    geom_hline(aes(yintercept=1), linetype="dashed") +
-    scale_x_date("",
-                 date_breaks="2 days",
-                 date_labels="%b %d") +
-    scale_y_log10("Time-varying reproduction number, R",
-                  breaks=2^seq(-10,10,2)) +
-    scale_color_manual("Analysis",
-                       breaks=c("overall", "symptomatic", "early"),
-                       values=cbbPalette[c(8, 6, 7)]) +
-    ggtitle("Comparison of analyses using COVID-19 estimates") +
-    theme_bw() +
-    theme(axis.text.y=element_text(color="black"),
-          axis.text.x=element_text(color="black", angle=45, hjust=1),
-          legend.position="bottom")
+#     theme(axis.text.y=element_text(color="black"),
+#           axis.title.x=element_blank(),
+#           axis.title.y=element_text(vjust=0),
+#           axis.text.x=element_blank(),
+#           legend.position=c(.15, .5))
+# R_SARS_shadow_dist <- estimate_R(shadow_dat_dist %>%
+#                                      select(dates, I=daily_infect_shadow),
+#                             method="parametric_si",
+#                             config=make_config(
+#                                 list(mean_si=8.4,
+#                                      std_si=3.8,
+#                                      t_start=seq(2,nrow(shadow_dat_dist)),
+#                                      t_end=seq(2,nrow(shadow_dat_dist)))))
+# # knitr::kable(R_SARS_shadow_dist$R[,c(1,3,5,8,11)], digits=2)
+# 
+# 
+# R_ncov_shadow_dist <- estimate_R(shadow_dat_dist %>%
+#                                      select(dates, I=daily_infect_shadow),
+#                             method="parametric_si",
+#                             config=make_config(list(
+#                                 mean_si=4.4,
+#                                 std_si=3.2,
+#                                 t_start=seq(2,nrow(shadow_dat_dist)),
+#                                 t_end=seq(2,nrow(shadow_dat_dist)))))
+# 
+# # knitr::kable(R_ncov_shadow_dist$R[,c(1,3,5,8,11)], digits=2)
+# 
+# R_eyeball_shadow_dist <- estimate_R(shadow_dat_dist %>%
+#                                         select(dates, I=daily_infect_shadow),
+#                                method="parametric_si",
+#                                config=make_config(list(
+#                                    mean_si=3,
+#                                    std_si=3.2,
+#                                    t_start=seq(2,nrow(shadow_dat_dist)),
+#                                    t_end=seq(2,nrow(shadow_dat_dist)))))
+# 
+# # knitr::kable(R_eyeball_shadow_dist$R[,c(1,3,5,8,11)], digits=2)
+# 
+# shadow_plot_dat_dist <- tibble(dates=c(R_SARS_shadow_dist$dates[-1],
+#                                   R_ncov_shadow_dist$dates[-1],
+#                                   R_eyeball_shadow_dist$dates[-1]),
+#                           R_mean=c(R_SARS_shadow_dist$R$`Mean(R)`,
+#                                    R_ncov_shadow_dist$R$`Mean(R)`,
+#                                    R_eyeball_shadow_dist$R$`Mean(R)`),
+#                           R_lb=c(R_SARS_shadow_dist$R$`Quantile.0.025(R)`,
+#                                  R_ncov_shadow_dist$R$`Quantile.0.025(R)`,
+#                                  R_eyeball_shadow_dist$R$`Quantile.0.025(R)`),
+#                           R_ub=c(R_SARS_shadow_dist$R$`Quantile.0.975(R)`,
+#                                  R_ncov_shadow_dist$R$`Quantile.0.975(R)`,
+#                                  R_eyeball_shadow_dist$R$`Quantile.0.975(R)`),
+#                           gen_time=c(rep("SARS", nrow(R_SARS_shadow_dist$R)),
+#                                      rep("COVID-19", nrow(R_ncov_shadow_dist$R)),
+#                                      rep("Eyeball", nrow(R_eyeball_shadow_dist$R))),
+#                           analysis="early") %>% 
+#     left_join(shadow_dat_dist %>% select(dates, daily_infect_shadow)) %>% 
+#     filter(daily_infect_shadow>0 | R_mean>0.2, gen_time !="Eyeball")
+# 
+# ggplot(data=shadow_plot_dat_dist, aes(x=dates, color=as.factor(gen_time))) +
+#     geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+#     # geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
+#     #           color="black") +
+#     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+#     # geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
+#     #           color="black") +
+#     geom_hline(aes(yintercept=1), linetype="dashed") +
+#     geom_line(aes(y=R_mean)) +
+#     # geom_line(aes(y=R_lb), linetype="dashed") +
+#     # geom_line(aes(y=R_ub), linetype="dashed") +
+#     scale_x_date("",
+#                  # limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+#                  date_breaks="2 days",
+#                  date_labels="%b %d") +
+#     scale_y_log10("Time-varying reproduction number, R",
+#                   breaks=2^seq(-10,10,2)) +
+#     scale_color_manual("Serial interval",
+#                        values=cbbPalette[-1]) +
+#     theme_bw() +
+#     theme(axis.text.y=element_text(color="black"),
+#           axis.text.x=element_text(color="black", angle=45, hjust=1),
+#           legend.position="bottom")
+# # 
+# # ggplot(data=plot_dat, aes(x=dates, color=as.factor(gen_time))) +
+# #     geom_smooth(aes(y=R_mean), se=F) +
+# #     geom_smooth(aes(y=R_lb), linetype="dashed", se=F) +
+# #     geom_smooth(aes(y=R_ub), linetype="dashed", se=F) +
+# #     scale_x_date("", limits=c(ymd("2020-01-25"),ymd("2020-02-20"))) +
+# #     scale_y_log10("R") +
+# #     scale_color_discrete("Serial interval") +
+# #     theme_bw() +
+# #     theme(axis.text=element_text(color="black"),
+# #           legend.position=c(0.75, 0.75))
+# 
+# 
+# # grid.arrange(R0_plot, symptomatic_plot, test_plot, ncol=1)
+# 
+# bind_rows(plot_dat,
+#           # sym_plot_dat,
+#           shadow_plot_dat_dist) %>%
+#     filter(daily_infected>0 | R_mean>0.2, gen_time=="COVID-19") %>% 
+#     ggplot(aes(x=dates, color=analysis)) +
+#     geom_line(aes(y=R_mean)) +
+#     # geom_line(aes(y=R_lb), linetype="dashed") +
+#     # geom_line(aes(y=R_ub), linetype="dashed") +
+#     geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+#     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+#     geom_hline(aes(yintercept=1), linetype="dashed") +
+#     scale_x_date("",
+#                  date_breaks="2 days",
+#                  date_labels="%b %d") +
+#     scale_y_log10("Time-varying reproduction number, R",
+#                   breaks=2^seq(-10,10,2)) +
+#     scale_color_manual("Analysis",
+#                        breaks=c("overall", "symptomatic", "early"),
+#                        values=cbbPalette[c(8, 6, 7)]) +
+#     ggtitle("Comparison of analyses using COVID-19 estimates") +
+#     theme_bw() +
+#     theme(axis.text.y=element_text(color="black"),
+#           axis.text.x=element_text(color="black", angle=45, hjust=1),
+#           legend.position="bottom")
 ```
 
-This run makes the initial outbreak look much less severe and the post-quarantine period not look great (it isn't less than 1 for very long), but not clearly indicative of a superspreading event.
-Let's see what happens when we run this 1,000 times:
-
+We simulate this process 1,000 times and take the average and 95% confidence interval across all simulations:
 
 ```{r Rt-shadow-dist-1000}
 R_sims <- foreach(i=1:1000, .combine=rbind) %dopar%{
@@ -647,10 +727,11 @@ R_sims <- foreach(i=1:1000, .combine=rbind) %dopar%{
                             t_end=seq(2,nrow(tmp_dist)))))
     return(tibble(sim=i,
                   dates=tmp_R$dates[-1],
-                  R_est=tmp_R$R$`Mean(R)`))
+                  R_est=tmp_R$R$`Mean(R)`,
+                  infections=tmp_dist$daily_infect_shadow[-1]))
 }
 
-R_sims %>% 
+R0_shadow_dist_plot <- R_sims %>% 
     group_by(dates) %>% 
     summarise(obs=sum(!is.na(R_est)),
               R_mean=mean(R_est, na.rm=T),
@@ -658,26 +739,60 @@ R_sims %>%
               R_ub=quantile(R_est, probs=.975, na.rm=T)) %>% 
     ggplot(aes(x=dates, y=R_mean)) +
     geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
-    # geom_text(aes(x=ymd("2020-02-03"), y=100, label="Quarantine\nstarts"),
-    #           color="black") +
     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
-    # geom_text(aes(x=ymd("2020-02-14"), y=100, label="US\nevacuation"),
-    #           color="black") +
     geom_hline(aes(yintercept=1), linetype="dashed") +
-    geom_ribbon(aes(ymin=R_lb, ymax=R_ub), alpha=0.5) +
-    geom_line() +
-    # geom_line(aes(y=R_lb), linetype="dashed") +
-    # geom_line(aes(y=R_ub), linetype="dashed") +
+    geom_ribbon(aes(ymin=R_lb, ymax=R_ub), alpha=0.4) +
+    geom_line(aes(y=R_mean)) +
     scale_x_date("",
-                 # limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
+                 limits=c(ymd("2020-01-21"),ymd("2020-02-20")),
                  date_breaks="2 days",
                  date_labels="%b %d") +
-    scale_y_log10("Time-varying reproduction number, R",
-                  breaks=2^seq(-10,10,2)) +
+    scale_y_log10("R, log scale",
+                  breaks=2^seq(-2,6,2),
+                  labels=c("1/4", "1", "4", "16", "64")) +
+    scale_color_manual("Serial interval",
+                       values=cbbPalette[6:7]) +
     theme_bw() +
+    ggtitle("Estimates with distributed incubation period") +
     coord_cartesian(ylim=c(0.25, 16)) +
     theme(axis.text.y=element_text(color="black"),
+          # axis.text.x=element_text(color="black", angle=45, hjust=1),
+          axis.text.x=element_blank(),
+          axis.title.x=element_blank(),
+          legend.position=c(0.15, 0.6),
+          legend.background=element_blank())
+
+dist_inf_plot <- R_sims %>% 
+    group_by(dates) %>% 
+    summarise(obs=sum(!is.na(R_est)),
+              inf_mean=mean(infections, na.rm=T),
+              inf_lb=quantile(infections, probs=.025, na.rm=T),
+              inf_ub=quantile(infections, probs=.975, na.rm=T)) %>% 
+    ggplot(aes(x=dates, y=inf_mean)) +
+    geom_bar(stat="identity", position="dodge") +
+    geom_errorbar(aes(ymin=inf_lb, ymax=inf_ub)) +
+    geom_vline(aes(xintercept=ymd("2020-02-05")), linetype="dashed") +
+    geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
+    scale_x_date("",
+                 limits=c(ymd("2020-01-21"),ymd("2020-02-20")),
+                 date_breaks="2 days",
+                 date_labels="%b %d") +
+    scale_y_continuous("Number of cases, reallocated") +
+    scale_fill_manual("Case type",
+                      labels=c("Asymptomatic", "Symptomatic"),
+                      values=cbbPalette[-1]) +
+    theme_bw() +
+    theme(axis.text.y=element_text(color="black"),
+          axis.title.x=element_blank(),
+          axis.title.y=element_text(vjust=0),
           axis.text.x=element_text(color="black", angle=45, hjust=1),
-          legend.position="bottom")
+          legend.position=c(.15, .5),
+          legend.background=element_blank())
+
+grid.arrange(R0_shadow_dist_plot, dist_inf_plot, ncol=1)
 ```
+
+Under these assumptions, we see that the peak reproduction number likely occurred prior to quarantine (and nowhere close to the 64 value we saw at the beginning).
+The quarantine did not completely stifle the epidemic, as the reproduction number stayed above 1 throughout the crisis.
+In fact, the number during the quarantine is about what we've seen in [Mainland China outside of Hubei](https://github.com/midas-network/COVID-19/tree/master/parameter_estimates/2019_novel_coronavirus).
 
