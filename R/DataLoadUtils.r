@@ -79,6 +79,7 @@ pull_JHUCSSE_github_data <- function(){
   files_in_dir <- list.files("data", "JHUCSSE Total Cases")
   files_in_dir_dates <- gsub("JHUCSSE Total Cases ", "", files_in_dir)
   files_in_dir_dates <- gsub(".csv", "", files_in_dir_dates)
+  # Get the most recent file again, just in cases we pull in the morning and the evening
   tmp <- which.max(mdy(files_in_dir_dates))
   files_in_dir_dates <- files_in_dir_dates[-tmp]
   
@@ -96,6 +97,9 @@ pull_JHUCSSE_github_data <- function(){
     
     # Save it
     readr::write_csv(case_data, file.path("data", paste0("JHUCSSE Total Cases ", date_,".csv")))
+    
+    # Print the dates of data that were saved
+    print(paste0("Saving data for: ", date_))
   }
 }
 
