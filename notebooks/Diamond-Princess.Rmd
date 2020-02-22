@@ -1,5 +1,7 @@
 ---
 title: "What happened on the Diamond Princess?"
+author: "Stephen A Lauer and Justin Lessler"
+date: "2020-02-22"
 output: html_document
 ---
 
@@ -73,6 +75,7 @@ symptomatic_plot <- ggplot(data=data_plot) +
     geom_vline(aes(xintercept=ymd("2020-02-11")), linetype="dashed") +
     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
     scale_x_date("",
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
                  date_breaks="2 days",
                  date_labels="%b %d") +
     scale_y_continuous("Cases") +
@@ -96,6 +99,7 @@ test_plot <- ggplot(data=dp_dat) +
     geom_vline(aes(xintercept=ymd("2020-02-11")), linetype="dashed") +
     geom_vline(aes(xintercept=ymd("2020-02-16")), linetype="dashed") +
     scale_x_date("",
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
                  date_breaks="2 days",
                  date_labels="%b %d") +
     scale_y_continuous("Tests") +
@@ -246,7 +250,7 @@ Cases confirmed before Feb 11 are randomly assigned to have a symptom onset date
 Cases confirmed after Feb 11 are randomly assigned to have a symptom onset date between Feb 10 and the day prior to confirmation.
 
 ```{r Rt-symp, cache=T}
-set.seed(1)
+# set.seed(1)
 distribute_case_onsets <- function(dp_dat){
     date_vec <- ymd("2020-01-01")
     for(i in 1:nrow(dp_dat)){
@@ -291,7 +295,7 @@ distribute_case_onsets <- function(dp_dat){
 }
 
 R_sims <- foreach(i=1:1000, .combine=rbind) %dopar%{
-    set.seed(i)
+    # set.seed(i)
     tmp_dist <- distribute_case_onsets(dp_dat)
     tmp_R_SARS <- estimate_R(tmp_dist %>%
                             select(dates, I=daily_shadow),
@@ -355,7 +359,7 @@ R0_shadow_dist_plot <- R_sims %>%
     geom_ribbon(aes(ymin=R_lb, ymax=R_ub, alpha=gray_out)) +
     geom_line(aes(y=R_mean, linetype=gray_out)) +
     scale_x_datetime("",
-                 limits=c(ymd_hms("2020-01-21 00:00:00"),
+                 limits=c(ymd_hms("2020-01-25 00:00:00"),
                           ymd_hms("2020-02-20 23:59:00")),
                  date_breaks="2 days",
                  date_labels="%b %d") +
@@ -398,7 +402,7 @@ dist_inf_plot <- R_sims %>%
     geom_text(aes(x=ymd("2020-02-18"), y=40, label="US\nevacuation"),
               color="black") +
     scale_x_date("",
-                 limits=c(ymd("2020-01-21"),ymd("2020-02-20")),
+                 limits=c(ymd("2020-01-25"),ymd("2020-02-20")),
                  date_breaks="2 days",
                  date_labels="%b %d") +
     scale_y_continuous("Average cases, reallocated") +
@@ -732,7 +736,7 @@ grid.arrange(R0_compare_shadow_plot, asymptomatic_tl_plot, ncol=1)
 <!-- We apply this to all infections, symptomatic and asymptomatic; otherwise we'd be assuming that all of the asymptomatic infections had just begun, when they may have been going on for a while. -->
 
 ```{r Rt-shadow-dist, eval=F}
-set.seed(1)
+# set.seed(1)
 distribute_case_delays <- function(dp_dat){
     date_vec <- ymd("2020-01-01")
     for(i in 1:nrow(dp_dat)){
@@ -906,7 +910,7 @@ distribute_case_delays <- function(dp_dat){
 
 ```{r Rt-shadow-dist-1000, eval=F}
 R_sims <- foreach(i=1:1000, .combine=rbind) %dopar%{
-    set.seed(i)
+    # set.seed(i)
     tmp_dist <- distribute_case_delays(dp_dat)
     tmp_R <- estimate_R(tmp_dist %>%
                             select(dates, I=daily_infect_shadow),
