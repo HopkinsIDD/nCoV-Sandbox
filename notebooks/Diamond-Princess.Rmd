@@ -1,5 +1,5 @@
 ---
-title: "What happened on the Diamond Princess?"
+title: "How does accounting for changes in surveillance and testing alter our understanding of the Diamond Princess outbreak?"
 author: "Stephen A Lauer and Justin Lessler"
 date: "2020-02-22"
 output: html_document
@@ -34,14 +34,19 @@ dp_dat <- read_csv("data/diamond-princess.csv") %>%
            daily_sym=daily_infected-daily_asym)
 ```
 
-The Diamond Princess cruise was placed under quarantine on Feb 5 after a former passenger (who was on the boat from January 20-25) tested positive for COVID-19 in Hong Kong on Feb 1.
+The Diamond Princess cruise was placed under quarantine on Feb 5 after a former passenger (who was on the boat from Jan 20-25) tested positive for COVID-19 in Hong Kong on Feb 1.
 During the quarantine, which ended on Feb 19, a subset of passengers were tested for COVID-19 every day.
 As infection numbers rose, many people questioned the efficacy of the quarantine.
 On Feb 20, the Japanese National Institute of Infectious Diseases [reported](https://www.japantimes.co.jp/news/2020/02/20/national/coronavirus-diamond-princess-before-quarantine/) that the majority of transmission occurred prior to the quarantine.
 
+One overlooked factor in the outbreak is that the surveillance protocol changed after the quarantine was implemented.
+In the beginning, only symptomatic cases were being tested and confirmed, but by the end, every passenger was being tested regardless of symptoms.
+Without accounting for this change, it may appear that there was more transmission after the quarantine started than prior to lockdown.
+In this blog post, we investigate how our understanding of the Diamond Princess outbreak changes when we account for the change in surveillance.
+
 Based on the publicly reported surveillance data, we estimated the daily reproduction number on the cruise, i.e. the number of people that each infected person was infecting each day.
 A reproduction number above 1 indicates that the virus is spreading, while below 1 indicates that the virus is dying out.
-We observe how estimates change when using the raw data and under a set of assumptions.
+We observe how estimates change when using the raw data and when we account for the change in surveillance.
 
 ## Data overview
 
@@ -53,7 +58,7 @@ This results in more symptomatic cases at the beginning and more asymptomatic ca
 Here is a summary of the testing protocol outlined in two field documents by NIID ([one](https://www.niid.go.jp/niid/en/2019-ncov-e/9407-covid-dp-fe-01.html) and [two](https://www.niid.go.jp/niid/en/2019-ncov-e/9417-covid-dp-fe-02.html)):
 
 - Feb 3-4: All passengers observed, symptomatic individuals had swabs taken for testing.
-- Feb 5: First test results come back, 1st positive COVID-19; quarantine starts
+- Feb 5: First test results come back; 1st positive COVID-19 case; quarantine starts
 - Feb 7: Thermometers distributed, passengers told to self monitor
 - Feb 11: Change in protocol, start testing by age group
 - Feb 15: First day with “asymptomatic” positives recorded
@@ -121,7 +126,7 @@ For this analysis, we use two serial interval estimates:
 2. An early estimate for [COVID-19](https://www.medrxiv.org/content/10.1101/2020.02.03.20019497v2.full.pdf+html) (mean: 4.7, sd: 2.9)
 <!-- 3. An eyeball estimate from our data (mean: 3.0, sd: 3.2) -->
 
-We'll start out by looking at all of the data, including symptomatic and asymptomatic cases.
+We'll start out by fitting a model to all of the raw data as reported:
 
 ```{r Rt}
 R_est_SARS <- estimate_R(dp_dat %>% select(dates, I=daily_infected),
@@ -222,27 +227,27 @@ grid.arrange(R0_plot, symptomatic_plot, test_plot,
              ncol=1)
 ```
 
-When using the SARS serial interval estimate, there is a large spike in the reproductive number right after the outbreak.
+When using the SARS serial interval estimate, there is a large spike in the reproduction number right after the quarantine is implemented.
 A reproduction number of 64 would certainly qualify as a super-spreading event, but there are reasons to be skeptical of using the SARS serial interval.
 The serial interval is impacted by the contact rate; if a person infrequently interacts with others, the time between their symptom onset and their contacts will likely be longer.
 On a cruise with swimming pools, buffets, and a [casino](https://www.princess.com/ships-and-experience/onboard-experience/activities/casino/), contact rates may be higher and thus the serial interval would be shorter.
 We'll think of the SARS estimate as a worst-case scenario.
 
-With the COVID-19 estimate, the reproductive number falls below 1 three days after the implementation of the quarantine (Feb 8), however this may be due to the fact that there was very little testing done on the 8th or 9th.
-The reproductive number rebounded to 6 on Feb 10 before settling in between 2-3 until falling below 2 on Feb 18.
+With the COVID-19 estimate, the reproduction number falls below 1 three days after the implementation of the quarantine (Feb 8), however this may be due to the fact that there was very little testing done on Feb 8-9.
+The reproduction number rebounded to 6 on Feb 10 before settling in between 2-3 until falling below 2 on Feb 18.
 
-However, this analysis probably biases the reproduction value high.
+However, this analysis probably biases the reproduction number high.
 The serial interval is often estimated as the time between the symptom onset of a primary case and the symptom onset of a secondary case.
-Since these "asymptomatic" cases could be symptomatic cases that have not presented symptoms yet, then we are violating that definition.
+Since these "asymptomatic" cases could be symptomatic cases that have not presented symptoms yet, we are violating that definition.
 By including more cases, we are inflating the amount of transmission and thus reproduction number would be biased high.
 
 This also doesn't account for the delays between symptom onset and confirmation, which changed when the protocol changed.
 All of the data appear to be confirmation dates, rather than the dates of symptom onset.
-From what we can gather from the NIID reports and the surveillance data, there is a 1-3 day lag for data reported prior to Feb 11.
-Then the protocol changes to testing by age group, starting with the eldest and febrile first.
+From what we can gather from the NIID reports and the surveillance data, there is a 1-3 day lag for cases reported prior to Feb 11.
+The protocol then changes to testing by age group, starting with the eldest and febrile first.
 Therefore, it is possible that a younger person could be symptomatic for a week prior to testing.
 
-## Using only symptomatic cases, adjusted for symptom onset
+## Adjusting for changes in surveillance
 
 In this analysis, we remove the asymptomatic cases and adjust the symptomatic cases.
 We assume that the first case was reported at the symptom onset time.
