@@ -139,7 +139,8 @@ read_MK_direct <- function(google=TRUE,
 ##' Fit Negative Binomial time to confirmation model
 ##' 
 ##' The function fits a Negative Binomial bayesian model to estimate the delay from time of symptom onset to time of case confirmation at the population-level (ignores spatial variation among provinces). 
-##' The model uses a negative binomial error structure with probability p and dispersion parameter r. Model fit to data using JAGS and 'runjags' pacakge. Defualt MCMC params should be increased for full run.
+##' The model uses a negative binomial error structure with probability p and dispersion parameter r. Model fit to data using JAGS and 'runjags' pacakge. Defualt MCMC params should be increased for full run. 
+##' If JAGS library not already installed, install here: https://sourceforge.net/projects/mcmc-jags/files/JAGS/3.x/
 ##' 
 ##' @param data data frame of linelist data produced by the 'read_MK_direct' function
 ##' @param n_chains number of chains to run (default=4)
@@ -211,7 +212,8 @@ fit_negbin_time_to_conf <- function(data,
 ##' The function fits a hierarchical bayesian model to estimate the delay from time of symptom onset to time of case confirmation. The model
 ##' uses a negative binomial error structure with probability p and dispersion parameter r. Province-level distributions are also
 ##' fit with population-level hyper-paramters. This allows each province to diverge from population mean based on the data. Provinces with
-##' little data regress to pop mean. Model fit to data using JAGS and 'runjags' pacakge. Defualt MCMC params should be increased for full run.
+##' little data regress to pop mean. Model fit to data using JAGS and 'runjags' pacakge. Defualt MCMC params should be increased for full run. 
+##' If JAGS library not already installed, install here: https://sourceforge.net/projects/mcmc-jags/files/JAGS/3.x/
 ##' 
 ##' @param data data frame of linelist data produced by the 'read_MK_direct' function
 ##' @param n_chains number of chains to run (default=4)
