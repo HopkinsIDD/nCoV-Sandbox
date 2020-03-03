@@ -1,0 +1,229 @@
+---
+title: "Estimating infection incidence with augmented confirmed case counts"
+output: html_document
+author: 
+  - John Giles
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+require(knitr)
+require(tidyverse)
+require(gridExtra)
+require(lubridate)
+require(googlesheets4)
+require(runjags) # If JAGS library not already installed, install here: https://sourceforge.net/projects/mcmc-jags/files/JAGS/3.x/
+require(MCMCvis)
+require(foreach)
+require(doParallel)
+
+knitr::opts_knit$set(root.dir = "..")
+
+source("../R/DataAugUtils.r")
+source("../R/DataLoadUtils.r")
+source("../R/BasicEpiAnalyses.r")
+```
+
+
+## Outline
+
+1. Correction of confirmed case counts
+
+    A. Smoothing inferred incidence using basis splines
+    
+    B. Correcting over-reporting due to changed case definition in Hubei on Feb 13
+  
+2. Augment reported incidence to estimate infection incidence
+
+    A. Simulate incubation period
+    
+    B. Fit and simulate delay from symptom onset to confirmation
+    
+    C. Adjust reported confirmation dates to account for delay in symptom onset and confirmation
+
+***
+
+# Smoothing and correction of confirmed case counts
+
+This takes the dates of case confirmation and smoothes with splines to ensure monotonic increase then adjusts for the change in reporting in Hubei on Feb 13. 
+
+```{r, warning=FALSE, message=FALSE}
+#pull_JHUCSSE_github_data()
+
+# Load in the JHU CSSE Data
+jhucsse <- read_JHUCSSE_cases(Sys.time(), append_wiki=FALSE)
+
+jhucsse$Province_State <- as.factor(jhucsse$Province_State)
+
+# Smoothing only
+incidence_data <- est_daily_incidence(jhucsse,
+                                      ISOdate(2019,12,1),
+                                      Sys.time())
+
+# Smoothing plus correct for the change in reportin on the 13th
+corrected_hubei <- correct_for_Hubei_reporting(jhucsse,
+                                               ISOdate(2019,12,1),
+                                               Sys.time())
+
+gridExtra::grid.arrange(
+  plot_incidence_ests_report_b(conf_cases=jhucsse, incid_ests=incidence_data, locations="Hubei") +
+    ggtitle("Spline-smoothed only"),
+  plot_incidence_ests_report_b(conf_cases=jhucsse, incid_ests=corrected_hubei, locations="Hubei") +
+    ggtitle("Spline-smoothed and corrected for Feb 13 reporting"),
+  nrow=2
+)
+
+# Combine all incidence data with corrected Hubei and merge with cumulative confirmed counts
+incidence_data$Incidence[incidence_data$Province_State == 'Hubei'] <- corrected_hubei$Incidence
+head(incidence_data)
+```
+
+
+# Estimate infection incidence using corrected case counts
+
+Now that we have inferred the dates of confirmation for confirmed cases, we can simulate augmented data that will estimate the infection incidence. Infection incidence is estimated by adjusting corrected confirmation dates by the delay incurred from the incubation period and the time from symptom onset to case confirmation. 
+
+## Incubation period
+To simulate the incubation period we used a log-normal distrubtion with parameters estimated by Lauer et al. ([2020](https://github.com/HopkinsIDD/ncov_incubation#data-summary)) who used exposure and symptom onset windows from cases outside Hubei that were within Mainland China and other countries. Simulated values of the incubation period $X$ are doubly stochastic allowing for uncertainty in the estimation of $\hat\mu$ and $\hat\sigma$. Both parameters are allowed to vary according to a normal distribution that is truncated by the 95% credible intervals of the posterior distributions.
+
+$$
+X \sim \text{Log-normal}(\hat{\mu}, \hat{\sigma})
+$$
+```{r, message=FALSE}
+hist(sim_inf_period(n=10000,
+                    mu=1.621,
+                    sigma=0.418,
+                    mu_95low=1.504,
+                    mu_95high=1.755,
+                    sigma_95low=0.271,
+                    sigma_95high=0.542,
+                    n_obs=181),
+     breaks=30,
+     col='cornflowerblue',
+     xlab='Incubation period (days)',
+     main='')
+```
+
+
+## Confirmation delay
+
+Based on preliminary models, it appears that there is more spatial variation in the time to confirmation among provinces than there is temporal variation in the population mean. Therefore, we estimated province-level time to confirmation using a Negative Binomial Bayesian model with hierarchical structure. 
+
+$$
+Y_j \sim \text{Negbin}(\hat{p}_j, \hat{r}_j)
+$$
+Where, the random variable $y_j$ is the time in days from symptom onset to reported case confirmation in province $j$. Negative binomial parameters $p_j$ and $r_j$ are the success probability and dispersion parameter respectively. The model first estimates the population-level mean $p^\prime$ and $r^\prime$ which serve as hyper-priors to population-level parameters $p_j$ and $r_j$.
+$$
+\begin{aligned}
+p_j &\sim \text{Norm}(p^\prime, 0.01) \\
+r_j &\sim \text{Norm}(r^\prime, 0.01) 
+\end{aligned}
+$$
+Hyper-priors were defined as uninformative conjugate priors for the Negative Binomial distribution.
+
+$$
+\begin{aligned}
+p^\prime &\sim \text{Beta}(1,1) \\
+r^\prime &\sim \text{Gamma}(0.01,0.01)
+\end{aligned}
+$$
+
+### Fitting time to confirmation model
+We fit the model to public linelist data found in Moritz Kramer's [googlesheets document](https://docs.google.com/spreadsheets/d/1itaohdPiAeniCXNlntNztZ_oRvjh0HsGuJXUJWET008/htmlview#).
+
+```{r, warning=FALSE, message=FALSE}
+# Use saved data if too many requests on MK line list
+#linelist_data <- read_MK_direct(save_csv=FALSE)
+linelist_data <- read_csv('data/MK Line List 3-1-2020.csv')
+linelist_data <- linelist_data[linelist_data$country == 'China',] # only looking at China
+head(linelist_data)
+
+mod <- fit_spatial_time_to_conf(data=linelist_data,
+                                n_chains=3,
+                                n_burn=1000,
+                                n_samp=1000,
+                                n_thin=1) # need to do more chains/samples for production run
+
+time_to_conf_model <- summary(mod)
+head(time_to_conf_model)
+```
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, eval=TRUE, fig.height=10, fig.width=6}
+tmp <- lapply(split(linelist_data$time_to_conf, linelist_data$province), function(x) x[!is.na(x)])
+Y_province <- do.call(rbind, lapply(tmp, "length<-", max(lengths(tmp))))
+n <- apply(Y_province, 1, function(x) sum(!is.na(x)))
+
+MCMCplot(mod$mcmc, params='mu_province', 
+         labels=paste(dimnames(Y_province)[[1]], ' (n=', n, ')', sep=''),
+         xlab='Estimated mean time to case confirmation')
+abline(v=time_to_conf_model['mu','Mean'], col='red', lty=2, lwd=2)
+```
+
+
+### Simulate time to confirmation for provinces
+```{r}
+# Simulate 5 replicates of time to confirmation for provinces 1 to 5
+sim_spatial_time_to_conf(n=5, mod=time_to_conf_model, province=1:5) 
+```
+
+# Data augmentation
+
+Total delay from time of infection to time of confirmation is denoted as $\Delta t_{ij}$, which is the sum of the estimated incubation period $x_i$ for case $i$ and delay from symptom onset to case confirmation for each case $i$ in province $j$.
+
+$$
+\Delta t_{ij} = x_i + y_{ij}
+$$
+The estimated time of infection $t^{\text{infect}}_{ij}$ is estimated by taking the observed time of confirmation $t^{\text{confirm}}_{ij}$ and moving it back by $\Delta t_{ij}$:
+$$
+t^{\text{infect}}_{ij} = t^{\text{confirm}}_{ij} - \Delta t_{ij}
+$$
+Our quantity of interest is the augmented case count in province $j$ at time $t$. This is calculated as the sum of all $i$ cases in province $j$ for which estimated infection times are equal to $t$. Where $t \in T$ and $T$ is a vector of dates spanning the potential start of the outbreak to present $\{t_{\text{start}},\cdots, t_{\text{end}} \}$.
+$$
+C_{jt} = \sum_i \mathbf{1}(t^{\text{infect}}_{ij} \mid t=t^{\text{infect}}_{ij})
+$$
+
+### Simulate augmented infection times
+Below is a function to simulate augmented infection times based on our models of both incubation period and time to confirmation. This function takes incidence data for one province and simulates $n$ scenarios of augmented infection times. Augmented infection times are gathered in a table and merged by date.
+```{r}
+province_names <- dimnames(Y_province)[[1]]
+
+# Simulate 5 scenarios of infection times for the proivince Anhui
+test <- sim_infection_times(n=10, 
+                            inc_data=incidence_data[incidence_data$Province_State == 'Anhui',],
+                            time_to_conf_model=time_to_conf_model,
+                            province_names=province_names,
+                            n_cores=4)
+head(test, n=10)
+```
+
+### Augmented infection incidence for all provinces
+The function below gives the mean and 95% credible intervals for $C_{jt}$ defined above.
+```{r}
+linelist_data_china <- linelist_data %>% filter(country == 'China') # only looking at China
+
+incidence_data_china <- 
+     incidence_data %>% 
+     #filter(Province_State %in% province_names) %>%
+     filter(Province_State %in% province_names[1:3]) %>%
+     mutate(Province_State=as.character(Province_State))
+
+test <- augment_incidence(n=10,
+                          incidence_data=incidence_data_china,
+                          linelist_data=linelist_data_china,
+                          time_to_conf_model=time_to_conf_model,
+                          summarise=T,
+                          n_cores=4)
+head(test, n=10)
+```
+
+### Merge with original data
+
+Combine augmented infection indicence with inferred incidence and cumulative confirmed counts for easy plotting of all quantities.
+```{r, warning=FALSE, message=FALSE}
+
+#incidence_data <- merge_cum_inc(cum_data=jhucsse, inc_data=incidence_data)
+#head(incidence_data)
+```
+
+### Plot some things
