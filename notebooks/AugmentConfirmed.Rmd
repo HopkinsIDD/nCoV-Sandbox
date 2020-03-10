@@ -221,9 +221,10 @@ head(test, n=10)
 
 Combine augmented infection indicence with inferred incidence and cumulative confirmed counts for easy plotting of all quantities.
 ```{r, warning=FALSE, message=FALSE}
-
-#incidence_data <- merge_cum_inc(cum_data=jhucsse, inc_data=incidence_data)
-#head(incidence_data)
+all_data <- merge_aug_data(cum_data=jhucsse, 
+                           inc_data=incidence_data_china, 
+                           aug_data=test)
+head(all_data)
 ```
 
 ### Plot some things

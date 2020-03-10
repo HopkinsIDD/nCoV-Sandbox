@@ -551,9 +551,7 @@ merge_aug_data <- function(cum_data,
      require(foreach)
      
      foreach(i=1:nrow(aug_data), .combine='rbind') %do% {
-          
-          print(i)
-          
+
           # Get cumualtive case counts
           sel <- which(format(cum_data$Update, '%Y-%m-%d') == aug_data$Date[i] & 
                             as.character(cum_data$Province_State) == as.character(aug_data$Province_State[i]))
@@ -566,7 +564,7 @@ merge_aug_data <- function(cum_data,
                cum_obs <- cum_data[which(as.character(cum_data$Province_State) == as.character(aug_data$Province_State[i]))[1],]
                cum_obs[,3:7] <- NA
                
-          } else if (nrow(tmp) > 1) {
+          } else if (nrow(cum_obs) > 1) {
                
                # If there are multiple entrys, use the confirmed counts with the latest time of day
                cum_obs <- cum_obs[order(cum_obs$Update, decreasing=TRUE)[1],]
@@ -576,14 +574,14 @@ merge_aug_data <- function(cum_data,
           sel <- which(format(inc_data$Date, '%Y-%m-%d') == aug_data$Date[i] &
                             as.character(inc_data$Province_State) == as.character(aug_data$Province_State[i]))
           
-          inc_obs <- inc_data[sel,'Incidence']
+          inc_obs <- inc_data[sel, 'Incidence']
           
           if (nrow(inc_obs) == 0) inc_obs <- NA
           
           data.frame(cum_obs,
                      Date=aug_data$Date[i],
                      Incidence=inc_obs,
-                     aug_data[i,3:4],
+                     aug_data[i,3:5],
                      row.names=NULL)
      }
 }
