@@ -293,7 +293,52 @@ transformed parameters {
   real <lower=0> expected_deaths[T,L]; //  # deaths at time T
   real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
   real <lower=0> expected_riskset[T,L,N]; // expected people in each compartment at eahc time.
+  real <lower=0> indiv_expected_risk [300,L]; //looking a very long way out where would we expect an individual to be
+  real <lower=0> indiv_expect_death [300]; //what is an indivduals probability of dying on exactly each day
+  real <lower=0> indiv_expect_recover [300]; //what is an individauls probability of recovering on each day
+  
+//Fill in the probability of getting infected on each day 
+for (i in 1:N) {
+  indiv_expected_risk[1,i] = 0;
+}
 
+indiv_expected_risk[1,1] = 1;
+indiv_expect_death[1] = indiv_expected_risk[1,1]*lambda1[1];
+indiv_expect_recover[1] = indiv_expected_risk[1,1]*lambda2[1];
+
+for (t in 2:300) {
+  indiv_expected_risk[t,1] =  
+    indiv_expected_risk[t-1,1]  - 
+    indiv_expected_risk[t-1,1] * lambda1[1] -
+    indiv_expected_risk[t-1,1] * lambda2[1];
+  if (N>1) {
+    for (i in 2:N) {
+      indiv_expected_risk[t,i-1] -= 
+        alpha *indiv_expected_risk[t-1,i-1];
+        
+       indiv_expected_risk[t,i] =  
+          indiv_expected_risk[t-1,i] +
+          alpha *indiv_expected_risk[t-1,i-1] -
+          indiv_expected_risk[t-1,i] * lambda1[i] -
+          indiv_expected_risk[t-1,i] * lambda2[i];
+    }
+  }
+  
+  //Accumulate deaths and recovereds                      
+  indiv_expect_death[t] = indiv_expected_risk[t,1] * lambda1[1];
+  indiv_expect_recover[t] = indiv_expected_risk[t,1] * lambda2[1];
+              
+  if(N>1) {
+    for (i in 2:N) {
+      indiv_expect_death[t] += indiv_expected_risk[t,i] * lambda1[i];
+      indiv_expect_recover[t] += indiv_expected_risk[t,i] * lambda2[i];
+    }
+  }
+}
+
+
+  
+//Calculation the popualtion based probabilities. 
 for (j in 1:L) {
     //initialize the 
     expected_riskset[1,j,1] = c[1,j];
@@ -365,7 +410,7 @@ model {
   cfrmdl_erlang_data <- cfrmdl_CH_data
   cfrmdl_erlang_data$N <- 3 #Set the number of compartments
   cfrmdl_erlang_res <- sampling(cfrmdl_erlang, data=cfrmdl_erlang_data,
-                         iter=2000)
+                         iter=500)
 
 ```
 
