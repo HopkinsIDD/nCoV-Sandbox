@@ -128,8 +128,8 @@ read_MK_direct <- function(google=TRUE,
      d$time_to_conf <- d$date_confirmation - d$date_onset
      
      if(save_csv) {
-          
-          write_csv(d, paste0("./data/Linelist_MK_", format(Sys.Date(), "%Y_%m_%d"),".csv")) 
+             
+          write_csv(d, paste0("./data/MK Line List ", format(Sys.Date(), "%m-%d-%Y"),".csv")) 
           message('Saved to .csv')
      } 
      
@@ -494,11 +494,8 @@ augment_incidence <- function(n,
         if (!is.null(n_cores)) {
                 
                 clust <- parallel::makeCluster(n_cores)
-                
                 doParallel::registerDoParallel(clust)
-                parallel::clusterExport(clust, 
-                                        c("sim_inf_period", "sim_spatial_time_to_conf", 
-                                          ls(environment())), envir=environment())
+                parallel::clusterExport(clust, c("sim_inf_period", "sim_spatial_time_to_conf", ls(environment())), envir=environment())
         }
         
         if (getDoParRegistered()) message(paste(getDoParWorkers(), 'cores registered for parallel backend')) 
@@ -521,11 +518,10 @@ augment_incidence <- function(n,
         row.names(out) <- NULL
         colnames(out)[1:2] <- c('Province_State', 'Date')
         
-        
         # Summarise simulations
         if (summarise == TRUE) {
                 
-                ci <- apply(out[,-c(1:2)], 1, function(x) quantile(x, probs=c(0.0275,0.975), na.rm=T))
+                ci <- apply(out[,-c(1:2)], 1, function(x) quantile(x, probs=c(0.0275, 0.975), na.rm=T))
                 
                 return(data.frame(out[,1:2],
                                   mean=apply(out[,-c(1:2)], 1, function(x) mean(x, na.rm=T)),
@@ -541,40 +537,54 @@ augment_incidence <- function(n,
 
 ##' Function to merge augmented infection incidence with original cumulative case counts
 ##' 
-##' @param inf_data augmented infections times produced by augment_incidence function
 ##' @param cum_data a data frame with cumulative case data produced by the 'read_JHUCSSE_cases' function
 ##' @param inc_data a data frame produced by the 'est_daily_incidence' fucntion
+##' @param aug_data augmented infections times produced by augment_incidence function
+##' 
+##' @return a data frame with both cumulative counts, inferred incidence, and augmented infection incidence
 ##'
-##' @return a data frame with both cumulative counts and inferred incidence
-##'
-merge_cum_inc <- function(inf_data,
-                          cum_data,
-                          inc_data
+merge_aug_data <- function(cum_data,
+                           inc_data,
+                           aug_data
 ) {
      
      require(foreach)
      
-     foreach(i=1:nrow(inc_data), .combine='rbind') %do% {
+     foreach(i=1:nrow(aug_data), .combine='rbind') %do% {
+
+          # Get cumualtive case counts
+          sel <- which(format(cum_data$Update, '%Y-%m-%d') == aug_data$Date[i] & 
+                            as.character(cum_data$Province_State) == as.character(aug_data$Province_State[i]))
           
-          sel <- which(format(cum_data$Update, '%Y-%m-%d') == format(inc_data$Date[i], '%Y-%m-%d') & cum_data$Province_State == inc_data$Province_State[i])
-          tmp <- cum_data[sel,]
+          cum_obs <- cum_data[sel,]
           
-          if (nrow(tmp) == 0) {
+          if (nrow(cum_obs) == 0) {
                
                # Fill NAs for province/dates with no confirmed cases reported
-               tmp <- cum_data[which(cum_data$Province_State == inc_data$Province_State[i])[1],]
-               tmp[,3:7] <- NA
+               cum_obs <- cum_data[which(as.character(cum_data$Province_State) == as.character(aug_data$Province_State[i]))[1],]
+               cum_obs[,3:7] <- NA
                
-          } else if (nrow(tmp) > 1) {
+          } else if (nrow(cum_obs) > 1) {
                
                # If there are multiple entrys, use the confirmed counts with the latest time of day
-               tmp <- tmp[order(tmp$Update, decreasing=TRUE)[1],]
+               cum_obs <- cum_obs[order(cum_obs$Update, decreasing=TRUE)[1],]
           } 
           
-          data.frame(tmp[,1:2],
-                     Date=format(inc_data$Date[i], '%Y-%m-%d'),
-                     tmp[,4:7],
-                     Incidence=inc_data$Incidence[i],
+          # Get inferred incidence
+          sel <- which(format(inc_data$Date, '%Y-%m-%d') == aug_data$Date[i] &
+                            as.character(inc_data$Province_State) == as.character(aug_data$Province_State[i]))
+          
+          inc_obs <- inc_data[sel, 'Incidence']
+          
+          if (nrow(inc_obs) == 0) inc_obs <- NA
+          
+          data.frame(cum_obs,
+                     Date=aug_data$Date[i],
+                     Incidence=inc_obs,
+                     aug_data[i,3:5],
                      row.names=NULL)
      }
 }
+
+
+
