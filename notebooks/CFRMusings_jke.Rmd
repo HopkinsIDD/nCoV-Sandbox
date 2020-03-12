@@ -1,0 +1,502 @@
+---
+title: "CFRMusings"
+output: html_document
+---
+```{r setup, include=FALSE}
+#Preamble
+require(knitr)
+require(tidyverse)
+require(gridExtra)
+require(rstan)
+
+knitr::opts_knit$set(root.dir = "..")
+
+
+source("../R/DataLoadUtils.r")
+source("../R/BasicEpiAnalyses.r")
+
+
+```
+
+```{stan, eval = FALSE, output.var="cfrmdl_const_haz"}
+
+data {
+
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> c[T,L]; //number of new confirmed cases on each day. 
+  int w[L]; //is this wuhan
+}
+
+parameters {
+  real <lower=0, upper=1> lambda1; //parameter for time to death distribution
+  real <lower=0, upper=1> lambda2; // parameter for time to death or recovery distribution
+  real delta_death_hubei; // wuhan detect rate
+  real delta_recover_hubei; // wuhan detect rate
+}
+
+transformed parameters {
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  real <lower=0> expected_riskset[T,L]; // expected people in risk set
+
+for (j in 1:L) {
+    expected_riskset[1,j] = c[1,j];
+    expected_deaths[1,j] = expected_riskset[1,j] * lambda1 * exp(delta_death_hubei *w[j]) + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[1,j] * lambda2 * exp(delta_recover_hubei * w[j]) + 0.0001;
+ 
+    for (t in 2:T) {
+       expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
+                                expected_deaths[t-1,j] - expected_recovereds[t-1,j] ;
+                            
+      expected_deaths[t,j] = expected_riskset[t,j] * lambda1 * exp(delta_death_hubei *w[j])+ 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[t,j] *  lambda2 * exp(delta_recover_hubei * w[j]) + 0.0001;
+      
+    }
+  }
+}
+
+
+model {
+
+  delta_death_hubei ~ normal(0,.5); //somewhat stron prior around 0
+  delta_recover_hubei ~ normal(0,.5); //somewhat stron prior around 0
+  
+  //definitely can be made more effcient.
+  for (j in 1:L) {
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
+    }
+  }
+ 
+}
+
+```
+
+
+Prep data. 
+
+```{r, warning=, message=FALSE}
+
+   #Load in the JHU CSSE Data
+   jhucsse <- read_JHUCSSE_cases("2020-02-20 23:59", 
+                                 append_wiki = TRUE)
+  
+  ##Filter to countries with at least
+  #jhucsse <- jhucsse %>% 
+  #  filter(Country_Region%in%
+  #           c("Mainland China", "Macau", "Hong Kong")) 
+  
+  jhucsse$Province_State <- as.factor(jhucsse$Province_State)
+  
+  incidence_data <- est_daily_incidence_corrected(jhucsse,
+                                                  ISOdate(2019,12,1),
+                                                  ISOdate(2020,2,19))
+  
+  
+    
+  #incidence_data <- est_daily_incidence(jhucsse,
+  #                                ISOdate(2019,12,1),
+  #                                ISOdate(2020,2,14))
+  
+  
+  incidence_data$Province_State <- factor(incidence_data$Province_State, levels=levels(jhucsse$Province_State))
+         
+  ##look at this before we do it.
+  inc_plt <- incidence_data%>%filter(Date>"2020-1-1") %>% 
+    ggplot(aes(x=Date,  y=Incidence, fill=Province_State)) +
+    geom_bar(stat="identity", position="stack") +
+    theme_bw()+theme(legend.position="bottom")
+  
+
+  inc_plt
+
+
+  incidence_data<-
+    incidence_data%>%filter(Date>"2020-1-1")
+  
+  #Add columns with indices for time and location
+  incidence_data$loc <-
+    as.numeric(incidence_data$Province_State)
+  incidence_data$t <- as.numeric(as.Date(incidence_data$Date))-
+    min(as.numeric(as.Date(incidence_data$Date))) + 1
+  
+  Tmax <- max(incidence_data$t)
+  L <- max(incidence_data$loc)
+  cases <- matrix(0,nrow=Tmax, ncol=L)
+  
+  for (i in 1:nrow(incidence_data)) {
+    cases[incidence_data$t[i], incidence_data$loc[i]] <-
+      incidence_data$Incidence[i]
+  }
+  
+  
+   death_data <- est_daily_deaths(jhucsse,
+                                  ISOdate(2019,12,1),
+                                  ISOdate(2020,2,19))
+   
+  #look at this before we do it.
+  death_plt <- death_data%>%filter(Date>"2020-1-1") %>% 
+    ggplot(aes(x=Date,   y=Deaths, fill=Province_State)) +
+    geom_bar(stat="identity", position="stack") +
+    theme_bw()+theme(legend.position="bottom")
+  
+
+  death_plt
+
+
+  death_data<-
+    death_data%>%filter(Date>"2020-1-1") %>% 
+    drop_na(Deaths)
+  
+  
+  #Add columns with indices for time and location
+  death_data$loc <-
+    as.numeric(as.numeric(death_data$Province_State))
+  death_data$t <- as.numeric(as.Date(death_data$Date))-
+    min(as.numeric(as.Date(incidence_data$Date))) + 1
+  
+  
+  deaths <- matrix(0,nrow=Tmax, ncol=L)
+  
+  for (i in 1:nrow(death_data)) {
+    deaths[death_data$t[i], death_data$loc[i]] <-
+      death_data$Deaths[i]
+  }
+  
+  deaths<- round(deaths)
+  
+  #Recoveries
+  recovered_data <- est_daily_recovered(jhucsse,
+                                  ISOdate(2019,12,1),
+                                  ISOdate(2020,2,19), na_to_zeros = TRUE)
+  
+  
+  #look at this before we do it.
+  recovered_plt <- recovered_data%>%filter(Date>"2020-1-1") %>% 
+    ggplot(aes(x=Date,  y=Recovered, fill=Province_State)) +
+    geom_bar(stat="identity", position="stack") +
+    theme_bw()+theme(legend.position="bottom")
+  
+
+  recovered_plt
+
+
+  recovered_data<-
+    recovered_data%>%filter(Date>"2020-1-1") %>% 
+    drop_na(Recovered)
+  
+  
+  #Add columns with indices for time and location
+  recovered_data$loc <-
+    as.numeric(as.numeric(recovered_data$Province_State))
+  recovered_data$t <- as.numeric(as.Date(recovered_data$Date))-
+    min(as.numeric(as.Date(recovered_data$Date))) + 1
+  
+  
+  recovereds <- matrix(0,nrow=Tmax, ncol=L)
+  
+  for (i in 1:nrow(recovered_data)) {
+    recovereds[recovered_data$t[i], recovered_data$loc[i]] <-
+      recovered_data$Recovered[i]
+  }
+  
+  recovereds<- round(recovereds)
+  
+  #make the 
+  w <- rep(0,L)
+  w[recovered_data$loc[recovered_data$Province_State=="Hubei"]] <-1
+  
+  cases[cases <= 0] <- 0.001 #does not like 0s.
+  cases[which(is.na(cases))] <- 0 #Not sure why we have this
+  
+  recovereds[recovereds<=0] <- 0
+  
+  ##we now have everything to run our stand model
+  cfrmdl_CH_data <- list(T=Tmax, L=L,
+                      c=cases,
+                      d=deaths,
+                      r=recovereds,
+                      w=w)
+  
+  
+```
+
+```{r, eval=FALSE}
+  cfrmdl_CH_res <- sampling(cfrmdl_const_haz, data=cfrmdl_CH_data,
+                         iter=2000)
+
+```
+
+```{r}
+##Translate this into estimates of the CFR, rho
+
+chains <- extract(cfrmdl_CH_res)
+
+rho_CH <- matrix(nrow = length(chains$lambda1))
+rho_CH_hubei <-matrix(nrow = length(chains$lambda1))
+for(i in 1:length(chains$lambda1)){
+
+  try (
+    rho_CH[i] <- integrate(function(x)
+      {chains$lambda1[i]*exp(-(chains$lambda1[i]+chains$lambda2[i])*x)}, 
+                        lower = 0, upper = Inf)$value)
+  
+  try(
+    rho_CH_hubei[i] <- integrate(function(x)
+      {chains$lambda1[i]*exp(chains$delta_death_hubei[i])*
+        exp(-(chains$lambda1[i]*exp(chains$delta_death_hubei[i])+
+                chains$lambda2[i]*exp(chains$delta_recover_hubei[i]))*x)}, 
+                        lower = 0, upper = Inf)$value)
+}
+
+
+median(rho_CH)
+quantile(rho_CH, probs = c(.025, .975))
+
+
+median(rho_CH_hubei)
+quantile(rho_CH_hubei, probs = c(.025, .975))
+```
+Try running the same model with just non Hubei.
+
+
+Big differences between Hubei and elsewhere. One thought
+is this could partially be fixed if we dealt better with the delay 
+disctribution.
+
+
+```{stan, eval = FALSE, output.var="cfrmdl_erlang"}
+//Really not properly erlang...need to think about what this means...
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> c[T,L]; //number of new confirmed cases on each day. 
+  int w[L]; //is this wuhan
+  int N; //the numberof compartments.
+}
+
+parameters {
+  real <lower=0, upper=1> lambda1[N]; //death rate per compartment
+  real <lower=0, upper=1> lambda2[N]; //recovery rate per compartment
+  //real  logitlambda1[N]; //log death rate per compartment
+  //real  logitlambda2[N]; //log recovery rate per compartment
+  real <lower=0, upper=1> alpha; //rate of movement between compartments .
+  real delta_death_hubei; // wuhan detect rate
+  real delta_recover_hubei; // wuhan detect rate
+
+}
+
+transformed parameters {
+ // real <lower=0> lambda1[N]; //death rate per compartment
+ // real <lower=0> lambda2[N]; //recovery rate per compartment
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  real <lower=0> expected_riskset[T,L,N]; // expected people in each compartment at eahc time.
+  real <lower=0> indiv_expected_risk [300,L]; //looking a very long way out where would we expect an individual to be
+  real <lower=0> indiv_expect_death [300]; //what is an indivduals probability of dying on exactly each day
+  real <lower=0> indiv_expect_recover [300]; //what is an individauls probability of recovering on each day
+  
+  //lambda1 = 1/(1+exp(-logitlambda1));
+  //lambda2 = 1/(1+exp(-logitlambda2));
+  
+//Fill in the probability of getting infected on each day 
+for (i in 1:N) {
+  indiv_expected_risk[1,i] = 0;
+}
+
+indiv_expected_risk[1,1] = 1;
+indiv_expect_death[1] = indiv_expected_risk[1,1]*lambda1[1];
+indiv_expect_recover[1] = indiv_expected_risk[1,1]*lambda2[1];
+
+for (t in 2:300) {
+  indiv_expected_risk[t,1] =  
+    indiv_expected_risk[t-1,1]  - 
+    indiv_expected_risk[t-1,1] * lambda1[1] -
+    indiv_expected_risk[t-1,1] * lambda2[1];
+  if (N>1) {
+    for (i in 2:N) {
+      indiv_expected_risk[t,i-1] -= 
+        alpha *indiv_expected_risk[t-1,i-1];
+        
+       indiv_expected_risk[t,i] =  
+          indiv_expected_risk[t-1,i] +
+          alpha *indiv_expected_risk[t-1,i-1] -
+          indiv_expected_risk[t-1,i] * lambda1[i] -
+          indiv_expected_risk[t-1,i] * lambda2[i];
+    }
+  }
+  
+  //Accumulate deaths and recovereds                      
+  indiv_expect_death[t] = indiv_expected_risk[t,1] * lambda1[1];
+  indiv_expect_recover[t] = indiv_expected_risk[t,1] * lambda2[1];
+              
+  if(N>1) {
+    for (i in 2:N) {
+      indiv_expect_death[t] += indiv_expected_risk[t,i] * lambda1[i];
+      indiv_expect_recover[t] += indiv_expected_risk[t,i] * lambda2[i];
+    }
+  }
+}
+
+
+  
+//Calculation the popualtion based probabilities. 
+for (j in 1:L) {
+    //initialize the 
+    expected_riskset[1,j,1] = c[1,j]+0.001;
+    expected_deaths[1,j] = expected_riskset[1,j,1] *
+          lambda1[1] * exp(delta_death_hubei *w[j]) + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[1,j,1] *
+        lambda2[1] * exp(delta_recover_hubei * w[j]) + 0.0001;
+    
+    //Initialize the riskset i ther compartments to 0 if they exist.
+    if(N>1) {
+      for (i in 2:N) {
+        expected_riskset[1,j,i] = 0;
+      }
+    }
+ 
+    for (t in 2:T) {
+       //Move deaths and recoveries from last timestep out of first compartment.
+       expected_riskset[t,j,1] =  expected_riskset[t-1,j,1] + c[t,j] - 
+                                  expected_riskset[t-1,j,1] * lambda1[1] * exp(delta_death_hubei *w[j]) - 
+                                  expected_riskset[t-1,j,1] * lambda2[1] * exp(delta_recover_hubei * w[j]);
+                                
+      if(N>1) {
+        for (i in 2:N) {
+          //remove the alpha from the expected risk set i-1
+          expected_riskset[t,j,i-1] -= alpha *expected_riskset[t-1,j,i-1];
+          
+          expected_riskset[t,j,i] =  expected_riskset[t-1,j,i] +
+                                     alpha *expected_riskset[t-1,j,i-1] -
+                                     expected_riskset[t-1,j,i] * lambda1[i] * exp(delta_death_hubei *w[j])-
+                                     expected_riskset[t-1,j,i] * lambda2[i] * exp(delta_recover_hubei * w[j]);
+        }
+      }                            
+      
+      //Accumulate deaths and recovereds                      
+      expected_deaths[t,j] = expected_riskset[t,j,1] * lambda1[1] * exp(delta_death_hubei *w[j]) + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[t,j,1] * 
+              lambda2[1] * exp(delta_recover_hubei * w[j])  + 0.0001;
+              
+      if(N>1) {
+        for (i in 2:N) {
+          expected_deaths[t,j] += expected_riskset[t,j,i] * lambda1[i] * exp(delta_death_hubei *w[j]);
+          expected_recovereds[t,j] += expected_riskset[t,j,i] * 
+                lambda2[i] * exp(delta_recover_hubei * w[j]);
+        }
+      }
+      
+    }
+  }
+}
+
+
+model {
+
+  delta_death_hubei ~ normal(0,.5); //somewhat stron prior around 0
+  delta_recover_hubei ~ normal(0,.5); //somewhat stron prior around 0
+  //definitely can be made more effcient.
+  for (j in 1:L) {
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) +
+            poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
+    }
+  }
+
+  //  for (t in 1:300) {
+  //    target+=log(indiv_expect_death[t]) +
+  //          log(indiv_expect_recover[t]);
+  //  }
+  
+ 
+}
+
+```
+
+```{r, eval=FALSE}
+initval <- function(){
+  l1 <- c(.01, .01, .01)
+  l2 <- c(.05, .05, .05)
+  al <- 0.5
+    params <- list(lambda1=l1, lambda2=l2, alpha=al, delta_death_hubei = 0, delta_recover_hubei=0)
+    params
+    #list(params, params, params, params)
+}
+
+initval()
+  cfrmdl_erlang_data <- cfrmdl_CH_data
+  cfrmdl_erlang_data$N <- 3 #Set the number of compartments
+  cfrmdl_erlang_res <- sampling(cfrmdl_erlang, data=cfrmdl_erlang_data, 
+                         iter=20, init = initval)
+  
+  
+
+```
+
+```{r}
+##Translate this into estimates of the CFR, rho
+N <- cfrmdl_erlang_data$N
+
+##' Param 1 is alpha.
+##' Param 2:(N+1) are lambda 1s
+##' State N+1 is dead, state N+2 is recovered
+dx.dt <- function (t, state, param) {
+  rc <- vector(length=N+2)
+  rc[N+1] <- 0
+  rc[N+2] <- 0
+  
+  for (i in 1:N) {
+    ##add from last state if not 1
+     rc[i] <- ifelse(i>1, state[i-1]*param[1], 0) 
+     ## Take out deaths and recoverds
+     rc[i] <- rc[i] - (param[i+1] + param[N+i+1])*state[i]
+     ##Move to next state if not N
+     if (i<N) {rc[i] <- rc[i]-param[1]*state[i]}
+     ##Decrement deaths and revoverds
+     rc[N+1] <- rc[N+1] + param[i+1]*state[i]
+     rc[N+2] <- rc[N+2] + param[N+i+1]*state[i]
+  }
+  
+  return(list(rc))
+}
+
+
+require(deSolve)
+
+solve_deaths <- function(alpha, lambda1s, lambda2s) {
+  res <- ode(c(1, rep(0, N+1)), #initial state for N compartments plus death/recovery
+             c(1,1000), #just need intial values and at T large
+             dx.dt, #function
+             c(alpha, lambda1s, lambda2s)
+           )
+
+  return(res[2,N+2]) #should be deaths
+}
+
+chains <- extract(cfrmdl_erlang_res)
+rho_erlang <- vector(length=length(chains$alpha))
+rho_erlang_hubei <- vector(length=length(chains$alpha))
+
+lambda1 <- as.matrix(chains$lambda1)
+lambda2 <- as.matrix(chains$lambda2)
+for(i in 1:length(chains$alpha)){
+  rho_erlang[i] <- solve_deaths(chains$alpha[i], lambda1[i,], lambda2[i,])
+  
+  rho_erlang_hubei[i] <- solve_deaths(chains$alpha[i], 
+                                      lambda1[i,]*exp(chains$delta_death_hubei[i]), 
+                                      lambda2[i,]*exp(chains$delta_recover_hubei[i]))
+}
+
+
+median(rho_erlang)
+quantile(rho_erlang, probs = c(.025, .975))
+
+median(rho_erlang_hubei)
+quantile(rho_erlang_hubei, probs = c(.025, .975))
+```
