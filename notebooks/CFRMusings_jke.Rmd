@@ -8,7 +8,8 @@ require(knitr)
 require(tidyverse)
 require(gridExtra)
 require(rstan)
-
+require(lubridate)
+require(parallel)
 knitr::opts_knit$set(root.dir = "..")
 
 
@@ -81,7 +82,7 @@ Prep data.
 ```{r, warning=, message=FALSE}
 
    #Load in the JHU CSSE Data
-   jhucsse <- read_JHUCSSE_cases("2020-02-20 23:59", 
+   jhucsse <- read_JHUCSSE_cases("2020-03-12 23:59", 
                                  append_wiki = TRUE)
   
   ##Filter to countries with at least
@@ -221,6 +222,36 @@ Prep data.
                       r=recovereds,
                       w=w)
   
+  #read in individual data
+  
+  #Load in the JHU CSSE Data
+todaydate <- ISOdate(2020,3,12, hour = 11, min = 59, tz = "UTC")
+#cfr_moddata <- moddata(todaydate, withHubei = TRUE)
+#(cfr_moddata, file = "cfr_moddata.RData")
+
+#prepare individual-level data
+date <-ymd("20200305")
+IndDat <- read_MK_linelist("3-5-2020")
+IndDat <- process_MK_linelist(IndDat, ymd(date))
+
+
+IndDat <- IndDat %>% 
+            mutate(t = ifelse(t<=0, 1, t)) 
+
+deaths <- IndDat %>% filter(delta == 1 & !is.na(t) & t>1) %>% select(t, province)
+recovs <-   IndDat %>% filter(delta == 2& !is.na(t)& t>1) %>% select(t, province)
+td <- deaths$t
+wdi <- ifelse(deaths$province != "Hubei" | is.na(deaths$province), 0, 1)
+tr <- recovs$t
+wri <- ifelse(recovs$province != "Hubei" | is.na(recovs$province), 0, 1)
+
+cfrmdl_CH_data$tr <- tr
+cfrmdl_CH_data$td <- td
+cfrmdl_CH_data$wdi <- wdi
+cfrmdl_CH_data$wri <- wri
+cfrmdl_CH_data$Nd <- length(td)
+cfrmdl_CH_data$Nr <- length(tr)
+  
   
 ```
 
@@ -278,6 +309,12 @@ data {
   real <lower=0> c[T,L]; //number of new confirmed cases on each day. 
   int w[L]; //is this wuhan
   int N; //the numberof compartments.
+  int Nd; //the numberof deaths (individual)
+  int Nr; // number of individual recovs
+  int td[Nd];
+  int tr[Nr];
+ // matrix[Nd, 300] dt; // time to each individual deaths
+ // matrix[Nr, 300] dr; //time to each individual recoveries
 }
 
 parameters {
@@ -297,7 +334,7 @@ transformed parameters {
   real <lower=0> expected_deaths[T,L]; //  # deaths at time T
   real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
   real <lower=0> expected_riskset[T,L,N]; // expected people in each compartment at eahc time.
-  real <lower=0> indiv_expected_risk [300,L]; //looking a very long way out where would we expect an individual to be
+  real <lower=0> indiv_expected_risk [300,N]; //looking a very long way out where would we expect an individual to be
   real <lower=0> indiv_expect_death [300]; //what is an indivduals probability of dying on exactly each day
   real <lower=0> indiv_expect_recover [300]; //what is an individauls probability of recovering on each day
   
@@ -322,19 +359,19 @@ for (t in 2:300) {
     for (i in 2:N) {
       indiv_expected_risk[t,i-1] -= 
         alpha *indiv_expected_risk[t-1,i-1];
-        
-       indiv_expected_risk[t,i] =  
-          indiv_expected_risk[t-1,i] +
-          alpha *indiv_expected_risk[t-1,i-1] -
-          indiv_expected_risk[t-1,i] * lambda1[i] -
-          indiv_expected_risk[t-1,i] * lambda2[i];
+      
+      indiv_expected_risk[t,i] =  
+        indiv_expected_risk[t-1,i] +
+        alpha *indiv_expected_risk[t-1,i-1] -
+        indiv_expected_risk[t-1,i] * lambda1[i] -
+        indiv_expected_risk[t-1,i] * lambda2[i];
     }
   }
   
   //Accumulate deaths and recovereds                      
   indiv_expect_death[t] = indiv_expected_risk[t,1] * lambda1[1];
   indiv_expect_recover[t] = indiv_expected_risk[t,1] * lambda2[1];
-              
+  
   if(N>1) {
     for (i in 2:N) {
       indiv_expect_death[t] += indiv_expected_risk[t,i] * lambda1[i];
@@ -409,10 +446,12 @@ model {
     }
   }
 
-  //  for (t in 1:300) {
-  //    target+=log(indiv_expect_death[t]) +
-  //          log(indiv_expect_recover[t]);
-  //  }
+    for (g in 1:Nd) {
+      target+=log(indiv_expect_death[td[g]]);
+      }
+    for (h in 1:Nr){
+      target+= log(indiv_expect_recover[tr[h]]);
+    }
   
  
 }
@@ -433,7 +472,7 @@ initval()
   cfrmdl_erlang_data <- cfrmdl_CH_data
   cfrmdl_erlang_data$N <- 3 #Set the number of compartments
   cfrmdl_erlang_res <- sampling(cfrmdl_erlang, data=cfrmdl_erlang_data, 
-                         iter=20, init = initval)
+                         iter=200,  init = initval, cores = detectCores()) #
   
   
 
@@ -482,7 +521,7 @@ solve_deaths <- function(alpha, lambda1s, lambda2s) {
 chains <- extract(cfrmdl_erlang_res)
 rho_erlang <- vector(length=length(chains$alpha))
 rho_erlang_hubei <- vector(length=length(chains$alpha))
-
+i <- 1
 lambda1 <- as.matrix(chains$lambda1)
 lambda2 <- as.matrix(chains$lambda2)
 for(i in 1:length(chains$alpha)){
