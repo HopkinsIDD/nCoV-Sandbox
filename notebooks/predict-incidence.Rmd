@@ -14,6 +14,10 @@ library(gridExtra)
 library(lubridate)
 devtools::install_github("eebrown/data2019nCoV")
 library(data2019nCoV)
+library(mgcv)
+library(doMC)
+registerDoMC(10)
+
 
 source("R/DataLoadUtils.r")
 source("R/BasicEpiAnalyses.r")
@@ -121,9 +125,6 @@ world_case_interp <- est_daily_incidence(world_cases %>%
 ```
 
 ```{r loocv, eval=F}
-library(mgcv)
-library(doMC)
-registerDoMC(10)
 
 world_fit <- gam(pred_formula,
                  data=world_case_interp, family=poisson())
@@ -214,7 +215,7 @@ pred_dist <- function(fit_object,
     pred_count <- matrix(0, nrow=nrow(new_data), ncol=coef_perms)
     for (i in 1:coef_perms) {
         rep_preds <- test_fit %*% rep_params[i,] # replicate predictions
-        pred_count[,i] <- exp(rep_preds)*new_data$lag_ci1
+        pred_count[,i] <- pmax(exp(rep_preds)*new_data$lag_ci1-new_data$lag_ci1,0)
     }
     all_preds <- rpois(nrow(pred_count)*coef_perms*draws,
                        lambda=as.vector(pred_count))
@@ -226,8 +227,55 @@ all_fit <- gam(pred_formula,
 pred_dat <- make_new_pred_data(all_cases)
 preds <- pred_dist(fit_object=all_fit, new_data=pred_dat,
                         coef_perms=10, draws=10) %>% 
-                  matrix(nrow=50) %>% 
-                  as_tibble()
+                  matrix(nrow=50)
 
+all_preds <- foreach(i=seq(ncol(preds)), .combine=rbind) %dopar% {
+    # pred_dat %>% 
+    #     mutate(cum_inc=preds[,i],
+    #            cum_inc=ifelse(cum_inc < lag_ci1, lag_ci1, cum_inc),
+    #            Incidence=cum_inc-lag_ci1,
+    #            inc_lag0=Incidence,
+    #            sim=i)
+    pred_dat %>% 
+        mutate(Incidence=preds[,i],
+               inc_lag0=Incidence,
+               cum_inc=lag_ci1+Incidence,
+               sim=i)
+}
+```
+
+```{r make-preds}
+pred_steps <- 13
+
+for(step in 1:pred_steps){
+    tmp_preds <- foreach(i=1:100, .combine=rbind) %dopar% {
+        tmp_dat <- make_new_pred_data(all_preds %>% filter(sim==i))
+        tmp_dist <- (pred_dist(fit_object=all_fit, new_data=pred_dat,
+                           coef_perms=10, draws=10) %>% 
+            matrix(nrow=50))[,sample(100,1),drop=T]
+        
+        # tmp_dat %>% 
+        #     mutate(cum_inc=tmp_dist,
+        #            cum_inc=ifelse(cum_inc < lag_ci1, lag_ci1, cum_inc),
+        #            Incidence=cum_inc-lag_ci1,
+        #            inc_lag0=Incidence)
+        tmp_dat %>% 
+            mutate(Incidence=tmp_dist,
+                   inc_lag0=Incidence,
+                   cum_inc=lag_ci1+Incidence)
+    }
+    all_preds <- bind_rows(all_preds, tmp_preds)
+}
+all_preds %>% 
+    group_by(sim, Date) %>% 
+    summarize(cs=sum(cum_inc),
+              inc=sum(Incidence)) %>% 
+    group_by(Date) %>% 
+    summarize(cs_med=median(cs),
+              cs_lb=quantile(cs, probs=.025),
+              cs_ub=quantile(cs, probs=.975),
+              inc_med=median(inc),
+              inc_lb=quantile(inc, probs=.025),
+              inc_ub=quantile(inc, probs=.975))
 ```
 
