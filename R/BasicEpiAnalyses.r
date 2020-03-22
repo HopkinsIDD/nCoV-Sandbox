@@ -226,7 +226,6 @@ est_daily_deaths <- function (cum_data,
 
 
 
-
 ##'
 ##' Function to extract approximate epidemic curves
 ##' from the cumulative case data.
@@ -257,9 +256,9 @@ est_daily_recovered <- function (cum_data,
   tmp_dt_seq <- seq(first_date, last_date, "days")
   recovered_data<- analyze %>% nest(-Province_State) %>%
     mutate(cs=purrr::map(data, ~ fit_ispline(dates=.$Update, obs=.$Recovered))) %>%
-    mutate(Incidence=purrr::map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update)],
-                                                      Recovered= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)]))))))) %>%
-    unnest(Incidence) %>% dplyr::select(-data) %>% dplyr::select(-cs)
+    mutate(Recovered=purrr::map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
+                                                      Recovered= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)& tmp_dt_seq<=max(.y$Update)]))))))) %>%
+    unnest(Recovered) %>% dplyr::select(-data) %>% dplyr::select(-cs)
   
   return(recovered_data)
   
