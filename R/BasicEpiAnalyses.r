@@ -364,7 +364,7 @@ est_daily_recovered <- function (cum_data,
 ##'
 ##' @return a data frame with roughly estimated incidence in it
 ##'
-est_daily_recovered <- function (cum_data,
+est_daily_recovered_country <- function (cum_data,
                                  first_date,
                                  last_date,
                                  na_to_zeros=FALSE) {
