@@ -186,6 +186,57 @@ est_daily_incidence <- function (cum_data,
 }
 
 
+
+##'
+##' Function to extract approximate epidemic curves
+##' from the cumulative case data, with enough detail to group by country
+##'
+##' @param cum_data a data frame with cumulative case data in oit
+##' @param first_date the first date to infer
+##' @param second_date the last date to infer...shold be iwthin data range
+##'
+##'
+##' @return a data frame with roughly estimated incidence in it
+##'
+est_daily_incidence_country <- function (cum_data,
+                                 first_date,
+                                 last_date,
+                                 na_to_zeros=FALSE) {
+  if (na_to_zeros) {
+    analyze <-   cum_data %>% replace(is.na(.), 0)
+  } else {
+    analyze <-   cum_data %>% drop_na(Confirmed)
+  }
+  
+  
+  ##Get the implied daily incidence for each province
+  ##by fitting a monitonically increasing spline and then
+  ##taking the difference (a little less sensitive to
+  ##perturbations in reporting than taking raw difference).
+  ##Making sure only to infer over trhe suport
+  tmp_dt_seq <- seq(first_date, last_date, "days")
+  incidence_data<- analyze %>% nest(-c(Country_Region, Province_State)) %>%
+    mutate(cs=purrr::map(data, ~fit_ispline(dates=.$Update, obs=.$Confirmed))) %>%
+    mutate(Incidence=purrr::map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
+                                                      Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)]))))))) %>%
+    unnest(Incidence) %>% dplyr::select(-data) %>% dplyr::select(-cs)
+  
+  return(incidence_data)
+  
+  #####OLD VERSION 
+  # tmp_dt_seq <- seq(first_date, last_date, "days")
+  # incidence_data<- analyze %>% nest(-Province_State) %>%
+  #   mutate(cs=purrr::map(data, ~splinefun(x=.$Update, y=.$Confirmed,
+  #                                  method="hyman"))) %>%
+  #   mutate(Incidence=purrr::map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
+  #                                              Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)]))))))) %>%
+  #   unnest(Incidence) %>% dplyr::select(-data) %>% dplyr::select(-cs)
+  
+  return(incidence_data)
+  
+}
+
+
 ##'
 ##' Function to extract approximate epidemic curves
 ##' from the cumulative case data.
@@ -225,6 +276,44 @@ est_daily_deaths <- function (cum_data,
 }
 
 
+##'
+##' Function to extract approximate epidemic curves
+##' from the cumulative case data, with info needed to aggregate by country.
+##'
+##' @param cum_data a data frame with cumulative case data in oit
+##' @param first_date the first date to infer
+##' @param second_date the last date to infer...shold be iwthin data range
+##'
+##'
+##' @return a data frame with roughly estimated incidence in it
+##'
+est_daily_deaths_country <- function (cum_data,
+                              first_date,
+                              last_date,
+                              na_to_zeros=FALSE) {
+  
+  if (na_to_zeros) {
+    analyze <-   cum_data %>% replace(is.na(.), 0)
+  } else {
+    analyze <-   cum_data %>% drop_na(Deaths)
+  }
+  
+  ##Get the implied daily incidence for each province
+  ##by fitting a monitonically increasing spline and then
+  ##taking the difference (a little less sensitive to
+  ##perturbations in reporting than taking raw difference).
+  ##Making sure only to infer over trhe suport
+  tmp_dt_seq <- seq(first_date, last_date, "days")
+  death_data<- analyze %>% nest(-c(Country_Region, Province_State)) %>%
+    mutate(cs=purrr::map(data, ~fit_ispline(dates=.$Update, obs=.$Deaths))) %>%
+    mutate(Deaths=purrr::map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
+                                                   Deaths= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)]))))))) %>%
+    unnest(Deaths) %>% dplyr::select(-data) %>% dplyr::select(-cs)
+  
+  return(death_data)
+  
+}
+
 
 ##'
 ##' Function to extract approximate epidemic curves
@@ -255,6 +344,43 @@ est_daily_recovered <- function (cum_data,
   ##Making sure only to infer over trhe suport
   tmp_dt_seq <- seq(first_date, last_date, "days")
   recovered_data<- analyze %>% nest(-Province_State) %>%
+    mutate(cs=purrr::map(data, ~ fit_ispline(dates=.$Update, obs=.$Recovered))) %>%
+    mutate(Recovered=purrr::map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
+                                                      Recovered= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)& tmp_dt_seq<=max(.y$Update)]))))))) %>%
+    unnest(Recovered) %>% dplyr::select(-data) %>% dplyr::select(-cs)
+  
+  return(recovered_data)
+  
+}
+
+##' Function to extract approximate epidemic curves
+##' from the cumulative case data with detail needed to aggregate to country level.
+##'
+##' @param cum_data a data frame with cumulative case data in oit
+##' @param first_date the first date to infer
+##' @param last_date the last date to infer...shold be iwthin data range
+##' @param na_to_zeros
+##'
+##'
+##' @return a data frame with roughly estimated incidence in it
+##'
+est_daily_recovered <- function (cum_data,
+                                 first_date,
+                                 last_date,
+                                 na_to_zeros=FALSE) {
+  if (na_to_zeros) {
+    analyze <-   cum_data %>% replace(is.na(.), 0)
+  } else {
+    analyze <-   cum_data %>% drop_na(Recovered)
+  }
+  
+  ##Get the implied daily incidence for each province
+  ##by fitting a monitonically increasing spline and then
+  ##taking the difference (a little less sensitive to
+  ##perturbations in reporting than taking raw difference).
+  ##Making sure only to infer over trhe suport
+  tmp_dt_seq <- seq(first_date, last_date, "days")
+  recovered_data<- analyze %>% nest(-c(Country_Region, Province_State)) %>%
     mutate(cs=purrr::map(data, ~ fit_ispline(dates=.$Update, obs=.$Recovered))) %>%
     mutate(Recovered=purrr::map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
                                                       Recovered= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)& tmp_dt_seq<=max(.y$Update)]))))))) %>%
