@@ -1,0 +1,399 @@
+---
+title: "Probability of covid-19 infection given RT-PCR negative"
+author: "Stephen A Lauer"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message=FALSE, warning=FALSE)
+knitr::opts_knit$set(root.dir = here::here())
+
+options(mc.cores=4,
+        scipen=999)
+```
+
+```{r library}
+library(tidyverse)
+library(rstan)
+
+n_iter <- 5e3
+n_warmup <- 5e3-2.5e3
+p_adapt_delta <- 0.8
+n_max_treedepth <- 20
+T_max <- 26
+
+test_dat <- read_csv("data/antibody-test-data2.csv")
+
+expanded_test_dat <- c()
+for(i in 1:nrow(test_dat)){
+    tmp <- tibble(t=test_dat$day[i],
+                  # t=(test_dat$max_day[i]+test_dat$min_day[i]-1)/2,
+                  t_min=test_dat$day_min[i],
+                  t_max=test_dat$day_max[i],
+                  test_pos=sample(c(rep(1,test_dat$test_pos[i]),
+                                    rep(0, test_dat$n[i]-test_dat$test_pos[i])),
+                                  test_dat$n[i]))
+    expanded_test_dat <- bind_rows(expanded_test_dat, tmp)
+}
+```
+
+In this paper, we will try to determine the probability that someone has covid-19 given a negative RT-PCR test.
+
+### Methods
+
+[Zhao et al. (2020)](https://academic.oup.com/cid/advance-article/doi/10.1093/cid/ciaa344/5812996) and [Liu et al. (2020)](https://www.medrxiv.org/content/10.1101/2020.03.06.20031856v1) looked at the sensitivity of the RT-PCR (and ELISAs) by time since symptom onset.
+
+```{r raw-figures}
+ggplot(data=test_dat, aes(x=day, y=pct_pos, size=n, color=study)) +
+    geom_point() +
+    scale_x_continuous("Days since symptom onset",
+                       breaks=seq(0,21,7)) +
+    scale_y_continuous("Sensitivity of the RT-PCR test") +
+    scale_size_continuous("Number of\nobservations") +
+    theme_bw()
+```
+
+The sensitivity rises to a peak 4 days after symptom onset then declines for the next couple of weeks.
+
+If we know the risk of an individual, we can find the negative predictive value -- the probability that someone who tests negative is actually negative.
+From [Bi et al.](https://www.medrxiv.org/content/10.1101/2020.03.03.20028423v3), we know that about 15% (77/517) household contacts later tested positive for covid-19.
+
+We use logistic regression for the sensitivity of the RT-PCR with a cubic polynomial for the log of time since exposure and use that, along with the probability of infection given exposure, to estimate the negative predictive value of the RT-PCR.
+We use estimates of the incubation period from [Lauer, Grantz, et al. (2020)](https://annals.org/aim/fullarticle/2762808/incubation-period-coronavirus-disease-2019-covid-19-from-publicly-reported).
+From this, we can find the probability of having a covid-19 infection despite being RT-PCR negative.
+
+We use Stan for this analysis.
+
+### Results
+
+```{r npv-stan, cache=T, eval=T}
+## fit a model to find the overall seroincidence across all observations
+npv_model <- stan_model("Stan/npv-analysis.stan")
+
+# p_adapt_delta <- 0.99
+
+npv_est <- sampling(npv_model,
+                    data=list(N=nrow(expanded_test_dat),
+                              test_pos=expanded_test_dat$test_pos,
+                              t_symp_test=expanded_test_dat$t,
+                              # t_symp_test_min=expanded_test_dat$t_min,
+                              # t_symp_test_max=expanded_test_dat$t_max,
+                              T_max=T_max,
+                              exposed_n=517,
+                              exposed_pos=77
+                    ),
+                    pars=c("npv", "sens", "attack_rate", "t_exp_symp", "t", "log_lik"),
+                    iter=n_iter,
+                    warmup=n_warmup,
+                    control=list(adapt_delta=p_adapt_delta,
+                                 max_treedepth=n_max_treedepth),
+                    save_warmup=F)
+
+rm(npv_model)
+## get likelihood information
+# ll_abs <- loo::extract_log_lik(npv_est)
+# ll_log <- loo::extract_log_lik(npv_est)
+# loo::loo_compare(list(loo(ll_abs), loo(ll_log)))
+```
+
+```{r npv-stan-abs, cache=T, eval=T}
+## fit a model to find the overall seroincidence across all observations
+npv_model <- stan_model("Stan/npv-analysis-beta.stan")
+
+# p_adapt_delta <- 0.99
+
+npv_est <- sampling(npv_model,
+                    data=list(N=nrow(expanded_test_dat),
+                              test_pos=expanded_test_dat$test_pos,
+                              t_symp_test=expanded_test_dat$t,
+                              # t_symp_test_min=expanded_test_dat$t_min,
+                              # t_symp_test_max=expanded_test_dat$t_max,
+                              T_max=T_max,
+                              exposed_n=517,
+                              exposed_pos=77
+                    ),
+                    pars=c("npv", "sens", "attack_rate", "t_exp_symp", "t", "log_lik"),
+                    iter=n_iter,
+                    warmup=n_warmup,
+                    control=list(adapt_delta=p_adapt_delta,
+                                 max_treedepth=n_max_treedepth),
+                    save_warmup=F)
+
+rm(npv_model)
+## get likelihood information
+# ll_abs <- loo::extract_log_lik(npv_est)
+# ll_log <- loo::extract_log_lik(npv_est)
+# loo::loo_compare(list(loo(ll_abs), loo(ll_log)))
+```
+
+```{r fixed-onset-stan-abs, cache=T, eval=F}
+## fit a model to find the overall seroincidence across all observations
+npv_onset_model <- stan_model("Stan/npv-fixed-onset.stan")
+# p_adapt_delta <- 0.99
+
+test_dat2 <- test_dat %>% 
+    group_by(day) %>% 
+    summarize(test_pos=sum(test_pos),
+              n=sum(n))
+
+npv_est <- sampling(npv_onset_model,
+                    data=list(N=nrow(test_dat2),
+                              T_max=T_max,
+                              test_pos=test_dat2$test_pos,
+                              test_n=test_dat2$n,
+                              t_symp_test=test_dat2$day,
+                              exposed_n=517,
+                              exposed_pos=77
+                    ),
+                    # pars=c("npv", "sens", "attack_rate"),#, "log_lik"),
+                    iter=n_iter,
+                    warmup=n_warmup,
+                    control=list(adapt_delta=p_adapt_delta,
+                                 max_treedepth=n_max_treedepth),
+                    save_warmup=F)
+
+rm(npv_onset_model)
+# loo::extract_log_lik(npv_onset_est) %>% loo::loo()
+```
+
+```{r fixed-onset-stan-b, cache=T, eval=F}
+## fit a model to find the overall seroincidence across all observations
+npv_onset_model <- stan_model("Stan/npv-fixed-onset-beta.stan")
+# p_adapt_delta <- 0.8
+
+test_dat2 <- test_dat %>% 
+    group_by(day) %>% 
+    summarize(test_pos=sum(test_pos),
+              n=sum(n))
+
+npv_est <- sampling(npv_onset_model,
+                    data=list(T_max=nrow(test_dat2),
+                              test_pos=test_dat2$test_pos,
+                              test_n=test_dat2$n,
+                              t_symp_test=test_dat2$day,
+                              exposed_n=517,
+                              exposed_pos=77,
+                              inc_period=c(rep(1,4), rep(0, nrow(test_dat2)-6))#,
+                              # symp_period=c(rep(0,4), rep(1, nrow(test_dat2)-4))
+                    ),
+                    # pars=c("npv", "sens", "attack_rate", "log_lik"),
+                    iter=n_iter,
+                    warmup=n_warmup,
+                    control=list(adapt_delta=p_adapt_delta,
+                                 max_treedepth=n_max_treedepth),
+                    save_warmup=F)
+
+rm(npv_onset_model)
+# loo::extract_log_lik(npv_onset_est) %>% loo::loo()
+```
+
+```{r all-conditionals}
+## sensitivity (sens) of PCR: P(PCR+ | covid+)
+## false negative rate (fnr) of PCR: P(PCR- | covid+) = 1 - sens
+sens <- extract(npv_est, pars="sens")[[1]]
+
+## negative predictive value (npv) of PCR: P(covid- | PCR-)
+## false omission rate (FOR) of PCR: P(covid+ | PCR-) = 1 - npv
+npv <- extract(npv_est, pars="npv")[[1]]
+
+## incubation time
+# inc_time <- extract(npv_est, pars="t_exp_symp")[[1]]
+inc_time <- 5
+
+## attack rate: P(covid+)
+## P(covid-) = 1 - attack_rate
+attack_rate <- extract(npv_est, pars="attack_rate")[[1]] %>% as.vector()
+
+## asymptomatic rate: P(noSymp | covid+) - P(noSymp | covid+, t < inc_time)
+asymp_rate <- 0
+
+## probability of no symptoms and covid+: P(noSymp, covid +)
+p_nosymp_pos <- c()
+for(i in 1:T_max)
+    p_nosymp_pos[i] <- (1-mean(inc_time < i))*(1-asymp_rate)+asymp_rate
+
+## FOR of PCR given noSymp: P(covid+ | PCR-, noSymp)
+## npv of PCR given noSymp: P(covid- | PCR-, noSymp) = 1 - for_pcr_nosymp
+p_for_pcr_nosymp <- (attack_rate*(p_nosymp_pos * t(1-sens))) %>% t()
+for_pcr_nosymp <- p_for_pcr_nosymp/((1-attack_rate) + p_for_pcr_nosymp)
+
+## FOR or noSymp: P(covid+ | noSymp)
+## npv of noSymp+: P(covid- | noSymp) = 1 - fnr_nosymp
+p_fn_nosymp <- (matrix(attack_rate, ncol=1) %*% matrix(p_nosymp_pos, nrow=1))
+fnr_nosymp <- p_fn_nosymp/((1-attack_rate) + p_fn_nosymp)
+
+## fnr of PCR given noSymp: P(PCR- | covid+, noSymp)
+# p_fn_pcr_nosymp <- for_pcr_nosymp * bla /p_nosymp_pos
+```
+
+
+```{r plot-dat}
+plot_dat <- as_tibble(sens) %>%
+    gather("days", "sens") %>%
+    mutate(days_since_exposure=gsub(pattern="V", "", days) %>% as.numeric) %>%
+    bind_cols(as_tibble(npv) %>%
+                  gather("days", "npv") %>%
+                  mutate(ar=rep(attack_rate, T_max)) %>% 
+                  select(-days)) %>% 
+    group_by(days_since_exposure) %>%
+    summarise(sens_med=median(1-sens),
+              sens_lb=quantile(1-sens,probs=.025),
+              sens_ub=quantile(1-sens,probs=.975),
+              npv_med=median(1-npv),
+              npv_lb=quantile(1-npv,probs=.025),
+              npv_ub=quantile(1-npv,probs=.975),
+              rr_med=median((1-npv)/ar),
+              rr_lb=quantile((1-npv)/ar,probs=.025),
+              rr_ub=quantile((1-npv)/ar,probs=.975))
+```
+
+```{r sens-figure}
+plot_dat %>%
+    gather("var", "val", -days_since_exposure) %>%
+    separate(var, c("metric", "est")) %>%
+    spread(est, val) %>%
+    ggplot(aes(x=days_since_exposure)) +
+    facet_grid(metric~., scales="free_y") +
+    geom_errorbar(aes(ymin=lb, ymax=ub), color="gray30") +
+    geom_point(aes(y=med)) +
+    scale_x_continuous("Days since exposure",
+                       breaks=seq(0, 21, 7),
+                       limits=c(0,21.5)) +
+    scale_y_continuous("") +
+    theme_bw() +
+    theme(axis.text=element_text(color="black"))
+
+ggplot(data=plot_dat, aes(x=days_since_exposure)) +
+    geom_errorbar(aes(ymin=sens_lb, ymax=sens_ub), color="gray30") +
+    geom_point(aes(y=sens_med)) +
+    scale_x_continuous("Days since exposure",
+                       breaks=seq(0, 21, 7),
+                       limits=c(0,21.5)) +
+    scale_y_continuous("Probability of testing RT-PCR negative,\ngiven covid-19 positive") +
+    theme_bw() +
+    theme(axis.text=element_text(color="black"))
+```
+
+With no data on RT-PCR to time prior to symptom onset, the estimates of sensitivity at or below day five are low with large credible intervals.
+
+```{r npv-figure}
+npv_plot <- ggplot(data=plot_dat, aes(x=days_since_exposure)) +
+    geom_errorbar(aes(ymax=1-npv_lb, ymin=1-npv_ub), color="gray30") +
+    geom_point(aes(y=1-npv_med)) +
+    scale_x_continuous("Days since symptom onset",
+                       breaks=seq(0, 21, 7),
+                       limits=c(0,21.5)) +
+    scale_y_log10("Probability of having been infected,\ngiven RT-PCR negative",
+                  breaks=c(.2, 10^c(-1:-3)),
+                  labels=c("1/5","1/10", "1/100", "1/1,000")) +
+    coord_cartesian(ylim=c(1e-3, 2e-1)) +
+    theme_bw() +
+    theme(axis.text=element_text(color="black"))
+
+rel_npv_plot <- ggplot(plot_dat, aes(x=days_since_exposure)) +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
+    geom_errorbar(aes(ymax=rr_lb, ymin=rr_ub), color="gray30") +
+    geom_point(aes(y=rr_med)) +
+    scale_x_continuous("Days since exposure",
+                       breaks=seq(0, 21, 7),
+                       limits=c(0,21.5)) +
+    scale_y_log10("Relative risk of having a negative RT-PCR test",
+                  breaks=2^c(-3:1),
+                  labels=c("1/8", "1/4", "1/2", "1", "2")) +
+    coord_cartesian(ylim=c(2^-3, 2^1)) +
+    theme_bw() +
+    theme(axis.text=element_text(color="black"))
+gridExtra::grid.arrange(sens_fig, npv_plot, rel_npv_plot)
+```
+
+
+Due to the decline in sensitivity over time, the RT-PCR test is best deployed about a week after exposure.
+A day or two after exposure (3 or 4 days prior to symptoms), the test may have no utility at all, and thus the probability of having been infected is would be the same with or without an RT-PCR, in our case about 15%.
+Seven to nine days after exposure (roughly 2 to 4 days after symptom onset), the negative predictive value is around 95%, meaning there is about a 5% chance of actually being covid-19 positive despite testing negative.
+
+```{r no-symp-plots}
+q_plot <- as_tibble(for_pcr_nosymp) %>%
+    gather("days", "p") %>%
+    mutate(days_since_infection=gsub(pattern="V", "", days) %>% as.numeric) %>%
+    select(-days) %>%
+    bind_cols(fnr_nosymp %>%
+                  as_tibble() %>%
+                  gather("days", "no_pcr") %>%
+                  select(-days)) %>%
+    group_by(days_since_infection) %>%
+    summarise(p_med=median(p),
+              p_lb=quantile(p,probs=.025),
+              p_ub=quantile(p,probs=.975),
+              no_pcr_med=median(no_pcr),
+              no_pcr_lb=quantile(no_pcr,probs=.025),
+              no_pcr_ub=quantile(no_pcr,probs=.975),
+              rr_med=median(p/no_pcr, na.rm=T),
+              rr_lb=quantile(p/no_pcr,probs=.025, na.rm=T),
+              rr_ub=quantile(p/no_pcr,probs=.975, na.rm=T))
+
+fp_plot <- ggplot(q_plot, aes(x=days_since_infection)) +
+    geom_errorbar(aes(ymin=p_lb, ymax=p_ub), color="gray30") +
+    geom_point(aes(y=p_med)) +
+    geom_line(aes(y=no_pcr_med), color="#E69F00") +
+    scale_x_continuous("Days since exposure",
+                       breaks=seq(0, 14, 7),
+                       limits=c(0,14.5)) +
+    scale_y_log10("Probability of having been infected,\ngiven PCR negative and no symptoms",
+                  breaks=c(.2, 10^c(-1:-4)),
+                  labels=c("1/5","1/10", "1/100", "1/1,000", "1/10,000")) +
+    coord_cartesian(ylim=c(1e-4, 2e-1)) +
+    theme_bw() +
+    theme(axis.text=element_text(color="black"))
+
+rel_fp_plot <- ggplot(q_plot, aes(x=days_since_infection)) +
+    geom_hline(aes(yintercept=1), linetype="dashed") +
+    geom_errorbar(aes(ymin=rr_ub, ymax=rr_lb), color="gray30") +
+    geom_point(aes(y=rr_med)) +
+    scale_x_continuous("Days since exposure",
+                       breaks=seq(0, 14, 7),
+                       limits=c(0,14.5)) +
+    scale_y_log10("Relative risk of having a negative RT-PCR test",
+                  breaks=2^c(-3:1),
+                  labels=c("1/8", "1/4", "1/2", "1", "2")) +
+    coord_cartesian(ylim=c(2^-3, 2^1)) +
+    theme_bw() +
+    theme(axis.text=element_text(color="black"))
+```
+
+Combining a negative RT-PCR with no symptoms yields a higher NPV and thus a lower chance of being covid-19 positive despite a negative PCR.
+Unlike the previous analysis, this is a monotonically decreasing function as the longer time a person has without symptoms, the more likely they are to not have been infected.
+The orange line in the top figure indicates the probability of being positive without an RT-PCR test.
+The second figure indicates that there is little benefit to having the RT-PCR a couple days after exposure, even without symptoms; the most benefit is derived by testing after a week without symptoms.
+The relative risk curve increases at the end as the sensitivity of the RT-PCR wanes and the likelihood of being covid-19 negative increases due to lack of symptoms.
+
+```{r scenarios}
+## shortest wait to get 99th percentile below 1% chance (11 days)
+long_wait <- (1-apply(inc_time, 1, function(x) mean(x<11)))*attack_rate
+quantile(long_wait, probs=c(.5, .99))
+
+## JH Hospital has sometimes tested HCW after one day of exposure
+exposed1_pcr_neg <- for_pcr_nosymp[,1]
+quantile(exposed1_pcr_neg, probs=c(.5, .99))
+
+## Wait for first day of symptoms
+symp1_pcr_neg <- c()
+inc_tmp <- sample(ceiling(inc_time), 1e4, T)
+summary(inc_tmp)
+for(i in 1:1e4){
+    symp1_pcr_neg[i] <- (1-npv[i,inc_tmp])-for_pcr_nosymp[i,inc_tmp]
+}
+quantile(symp1_pcr_neg, probs=c(.5, .99))
+
+## Kaiser Permanente Bethesda waits 3 days no symptoms + PCR-neg
+exposed3_pcr_neg <- for_pcr_nosymp[,3]
+quantile(exposed3_pcr_neg, probs=c(.5, .99))
+
+## shortest wait to get 99th percentile below 1% chance w/no symp+PCR-neg (8 days)
+wait_and_pcr <- for_pcr_nosymp[,8]
+quantile(wait_and_pcr, probs=c(.5, .99))
+
+## shortest wait to get 99th percentile below 1% chance w/ no symp+2PCRs
+wait_and_pcr2 <- 1-(1-for_pcr_nosymp[,1])*(1-for_pcr_nosymp[,2])
+quantile(wait_and_pcr2, probs=c(.5, .99))
+```
+
