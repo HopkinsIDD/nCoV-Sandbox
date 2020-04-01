@@ -19,14 +19,12 @@
 // cohort study, which were predicted as 'z_cohort_neg'.
 data {
     int<lower=1> N;
+    int<lower=1> T_max;
     int<lower=0> test_pos[N];
     int<lower=1> test_n[N];
-    vector<lower=0>[N] t_symp_test;
-    int<lower=1> T_max;
+    int<lower=0> t_symp_test[N];
     int<lower=1> exposed_n;
     int<lower=0> exposed_pos;
-    // vector<lower=0,upper=T_max>[N] t_min;
-    // vector<lower=0,upper=T_max>[N] t_max;
 }
 
 // 'z_survey_pos' is the total number of positive predictions for the survey.
@@ -35,26 +33,25 @@ data {
 // later estimate the sensitivity for all values from t=1:T_max, for which
 // we need 't_log_survey', 'tls_2', and 'tls_3'.
 transformed data {
-    vector[T_max] t_new;
+    real t[N];
     real t_mean;
     real t_sd;
-    vector[N] t;
-    vector[N] t_ort;
-    vector[N] t_ort2;
-    vector[N] t_ort3;
+    real t_ort[N];
+    real t_new[T_max];
+    real t_new_ort[T_max];
 
-    t=t_symp_test+5;
+    for(i in 1:T_max)
+        t_new[i] = log(i);
 
-    for(i in 1:T_max){
-        t_new[i] = i;
-    }
-    t_mean=sum(t_new)/T_max;
-    t_sd=sd(t_new);
+    t_mean = sum(t_new)/T_max;
+    t_sd = sd(t_new);
 
     for(i in 1:N){
-        t_ort[i] = (t[i]-t_mean)/t_sd;
-        t_ort2[i] = t_ort[i]^2;
-        t_ort3[i] = t_ort[i]^3;
+        t[i] = t_symp_test[i]+5;
+        t_ort[i] = (log(t[i])-t_mean)/t_sd;
+    }
+    for(i in 1:(T_max)){
+        t_new_ort[i] = (log(i)-t_mean)/t_sd;
     }
 
 }
@@ -63,12 +60,19 @@ transformed data {
 // specificity of the RF predictions. The 'beta' values are the coefficients
 // of the logistic regression model for finding the time-varying sensitivity
 // (below). 'd' is the probability of infection 1:T_max days ago.
-parameters {
+parameters{
     real beta_0;
     real beta_1;
     real beta_2;
     real beta_3;
     real<lower=0, upper=1> attack_rate;
+}
+
+transformed parameters{
+    real<lower=0> db_dt[3];
+
+    for(i in 1:3)
+        db_dt[i] = beta_1+2*beta_2*(log(i+1)-t_mean)/t_sd+3*beta_3*((log(i+1)-t_mean)/t_sd)^2;
 }
 
 //  We observe 'z_survey' cases as a binomial distribution based on the
@@ -78,32 +82,29 @@ parameters {
 //  We assume that the specificity is distributed as a binomial.
 model {
     exposed_pos ~ binomial(exposed_n, attack_rate);
-    // test_pos ~ binomial_logit(test_n, beta_0+beta_1*t);
-    test_pos ~ binomial_logit(test_n, beta_0+beta_1*t_ort+beta_2*t_ort2+beta_3*t_ort3);
+    for(i in 1:N){
+        test_pos[i] ~ binomial_logit(test_n[i], beta_0+beta_1*t_ort[i]+beta_2*t_ort[i]^2+beta_3*t_ort[i]^3);
+    }
+    // beta_0 ~ normal(0,1);
+    // beta_1 ~ normal(0,1);
+    // beta_2 ~ normal(0,1);
+    // beta_3 ~ normal(0,1);
 }
 
 generated quantities{
     vector<lower=0, upper=1>[T_max] sens;
     vector<lower=0, upper=1>[T_max] npv;
     vector[N] log_lik;
-    vector[T_max] t_new_ort;
-    vector[T_max] t_new_ort2;
-    vector[T_max] t_new_ort3;
 
-    t_new_ort = (t_new-t_mean)/t_sd;
     for(i in 1:T_max){
-        t_new_ort2[i] = t_new_ort[i]^2;
-        t_new_ort3[i] = t_new_ort[i]^3;
+        sens[i] = inv_logit(beta_0+beta_1*t_new_ort[i]+beta_2*t_new_ort[i]^2+beta_3*t_new_ort[i]^3);
     }
 
-    // sens=inv_logit(beta_0+beta_1*t_new);
-    sens=inv_logit(beta_0+beta_1*t_new_ort+beta_2*t_new_ort2+beta_3*t_new_ort3);
     for(i in 1:T_max){
         npv[i]=(1-attack_rate)/((1-sens[i])*attack_rate+(1-attack_rate));
     }
 
-
     for(i in 1:N){
-        log_lik[i] = binomial_logit_lpmf(test_pos[i] | test_n[i], beta_0+beta_1*t_ort[i]+beta_2*t_ort2[i]+beta_3*t_ort3[i]);
+        log_lik[i] = binomial_logit_lpmf(test_pos[i] | test_n[i], beta_0+beta_1*t_ort[i]+beta_2*t_ort[i]^2+beta_3*t_ort[i]^3);
     }
 }
