@@ -1,0 +1,281 @@
+---
+title: "Short-term Incidence Predictions"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir = here::here())
+
+#Preamble
+library(knitr)
+library(tidyverse)
+library(gridExtra)
+library(lubridate)
+devtools::install_github("eebrown/data2019nCoV")
+library(data2019nCoV)
+library(mgcv)
+library(doMC)
+registerDoMC(10)
+
+
+source("R/DataLoadUtils.r")
+source("R/BasicEpiAnalyses.r")
+
+pred_formula <- 'cum_inc ~ offset(log(lag_ci1)) + s(log(cum_diff), cum_diff2, bs="ts")' %>% as.formula
+```
+
+
+Run incidence estimation and plot results.
+
+```{r, warning=, message=FALSE}
+# pull_JHUCSSE_github_data()
+
+#Load in the JHU CSSE Data
+# jhucsse <- read_JHUCSSE_cases(Sys.time(),
+#                               append_wiki = TRUE)
+## load US COVID tracking data
+world_cases <- sarscov2_who_2019 %>% 
+    pivot_longer(cols=starts_with("cases"),
+                 names_to="country",
+                 names_prefix="cases_",
+                 values_to="cases") %>% 
+    pivot_longer(cols=starts_with("deaths"),
+                 names_to="country_death",
+                 names_prefix="deaths_",
+                 values_to="deaths") %>% 
+    filter(country==country_death, !grepl("region_", country),
+           !grepl("outside_", country), country!="internationalconveyance",
+           cases>0) %>% 
+    select(date, country, cases, deaths)
+
+world_case_interp <- est_daily_incidence(world_cases %>% 
+                                             select(Update=date,
+                                                    Province_State=country,
+                                                    Confirmed=cases) %>% 
+                                             arrange(Province_State, Update), 
+                                         # ISOdate(2020,1,20), ISOdate(2020,3,17)
+                                         ymd("2020,1,20"), today()) %>% 
+    group_by(Province_State) %>% 
+    mutate(days_inc=1:n(),
+           max_days=max(days_inc),
+           cum_inc=cumsum(Incidence) %>% round(),
+           lag_ci1=lag(cum_inc),
+           lag_ci2=lag(cum_inc,2),
+           lag_ci3=lag(cum_inc,3),
+           lag_ci4=ifelse(is.na(lag(cum_inc,4)),0,lag(cum_inc,4)),
+           cum_diff=lag_ci1/lag_ci2,
+           cum_diff2=(lag_ci1/lag_ci2)/(lag_ci2/lag_ci3),
+           inc_lag0=cum_inc-lag(cum_inc),
+           inc_lag1=lag(cum_inc)-lag(cum_inc,2),
+           inc_lag2=lag(cum_inc,2)-lag(cum_inc,3)) %>%
+    ungroup() %>%
+    filter(cum_diff!=Inf, !is.na(cum_diff), !is.na(inc_lag1)) %>% 
+    mutate(country=as.factor(Province_State))
+
+
+# ggplot(data=china_cases, aes(x=date, y=cases, color=country)) +
+    # geom_line()
+
+##Filter to countries with at least
+#jhucsse <- jhucsse %>% 
+#  filter(Country_Region%in%
+#           c("Mainland China", "Macau", "Hong Kong")) 
+
+# jhucsse$Province_State <- as.factor(jhucsse$Province_State)
+
+# todays_date <- ISOdate(year(Sys.Date()),month(Sys.Date()),day(Sys.Date()))
+# incidence_data <- jhucsse %>% 
+#     filter(Confirmed>0) %>% 
+#     mutate(Province_State = ifelse(Province_State=="Korea, South", "South Korea", Province_State),
+#            Province_State = ifelse(Province_State=="Republic of Korea", "South Korea", Province_State),
+#            Country_Region = ifelse(Country_Region=="Korea, South", "South Korea", Country_Region),
+#            Country_Region = ifelse(Country_Region=="Republic of Korea", "South Korea", Country_Region),
+#            Province_State = ifelse(Province_State=="Fench Guiana", "French Guiana", Province_State),
+#            Province_State = ifelse(Province_State=="Iran (Islamic Republic of)", "Iran", Province_State),
+#            Country_Region = ifelse(Country_Region=="Iran (Islamic Republic of)", "Iran", Country_Region),
+#            Province_State = ifelse(Country_Region=="Austria", "Austria", Province_State),
+#            Province_State = ifelse(Country_Region=="Lebanon", "Lebanon", Province_State),
+#            Province_State = ifelse(Province_State=="occupied Palestinian territory", "Palestine", Province_State),
+#            Province_State = ifelse(Province_State=="Republic of Ireland", "Ireland", Province_State),
+#            Province_State = ifelse(Province_State=="Republic of Moldova", "Moldova", Province_State),
+#            Province_State = ifelse(Province_State=="Santa Clara County", "Santa Clara", Province_State),
+#            Province_State = ifelse(Province_State=="Taiwan*", "Taiwan", Province_State),
+#            Province_State = ifelse(Province_State=="United Kingdom", "UK", Province_State),
+#            Province_State = ifelse(Province_State=="Viet Nam", "Vietnam", Province_State)) %>% 
+#     est_daily_incidence(ISOdate(2019,12,1),
+#                                       todays_date) %>% 
+#     group_by(Province_State) %>% 
+#     mutate(days_inc=1:n(),
+#            max_days=max(days_inc),
+#            cum_inc=cumsum(Incidence) %>% round(),
+#            lag_ci=lag(cum_inc),
+#            cum_diff=lag_ci/lag(cum_inc,2),
+#            inc_lag0=cum_inc-lag(cum_inc),
+#            inc_lag1=lag(cum_inc)-lag(cum_inc, 2),
+#            inc_diff=inc_lag0/inc_lag1) %>% 
+#     ungroup() %>% 
+#     na.omit() %>% 
+#     filter(cum_diff!=Inf, max_days>13)
+# 
+# library(scam)
+# 
+# scam_fit <- scam(cum_inc~offset(lag_ci)+s(Province_State, bs="re")+s(days_inc, bs="mpi"),
+#                  data=incidence_data)
+```
+
+```{r loocv, eval=F}
+
+world_fit <- gam(pred_formula,
+                 data=world_case_interp, family=poisson())
+summary(world_fit)
+
+time_in <- Sys.time()
+loocv <- foreach(i=1:nrow(world_case_interp), .combine=rbind) %dopar% {
+    train_dat <- world_case_interp[-i,]
+    test_dat <- world_case_interp[i,]
+    
+    tmp_gam <- gam(pred_formula,
+                   data=train_dat, family=poisson())
+    test_dat$pred_gam <- predict(tmp_gam, test_dat, type="response")
+    test_dat$pred_exp <- test_dat$lag_ci1*test_dat$cum_diff
+    test_dat$pred_ar1 <- test_dat$lag_ci1+test_dat$inc_lag1
+    return(test_dat)
+}
+time_out <- Sys.time()
+time_out-time_in
+
+mean(abs(loocv$cum_inc-loocv$pred_gam)/loocv$cum_inc)
+mean(abs(loocv$cum_inc-loocv$pred_ar1)/loocv$cum_inc)
+mean(abs(loocv$cum_inc-loocv$pred_exp)/loocv$cum_inc)
+
+ggplot(data=loocv, aes(x=cum_inc)) +
+    geom_smooth(aes(y=abs(cum_inc-pred_gam)/cum_inc)) +
+    geom_smooth(aes(y=abs(cum_inc-pred_ar1)/cum_inc), color="red3") +
+    scale_x_log10() +
+    scale_y_continuous()
+```
+
+```{r}
+## load US COVID tracking data
+US_cases <- read_csv("http://covidtracking.com/api/states/daily.csv") %>% 
+    transmute(Province_State=state,
+              Date=ymd(date),
+              Confirmed=positive) %>% 
+    # filter(Confirmed>0) %>% 
+    arrange(Province_State, Date) %>% 
+    # est_daily_incidence(ymd("2020-03-04"), ymd("2020,3,17")) %>% 
+    group_by(Province_State) %>% 
+    mutate(Incidence=Confirmed-lag(Confirmed)) %>% 
+    filter(!is.na(Incidence)) %>%
+    mutate(days_inc=1:n(),
+           max_days=max(days_inc),
+           cum_inc=cumsum(Incidence) %>% round(),
+           lag_ci1=lag(cum_inc),
+           lag_ci2=lag(cum_inc,2),
+           lag_ci3=lag(cum_inc,3),
+           lag_ci4=lag(cum_inc,4),
+           cum_diff=lag_ci1/lag_ci2,
+           cum_diff2=(lag_ci1/lag_ci2)/(lag_ci2/lag_ci3),
+           inc_lag0=cum_inc-lag(cum_inc),
+           inc_lag1=lag(cum_inc)-lag(cum_inc,2),
+           inc_lag2=lag(cum_inc,2)-lag(cum_inc,3)) %>%
+    ungroup() %>%
+    filter(cum_diff!=Inf, !is.na(cum_diff), !is.na(inc_lag1), cum_diff>=1) %>% 
+    mutate(country=as.factor(Province_State)) %>% 
+    select(-Confirmed)
+    
+
+all_cases <- bind_rows(world_case_interp, US_cases) %>% 
+    mutate(Province_State=as.factor(Province_State))
+make_new_pred_data <- function(dat){
+    pred_dat <- dat %>% 
+        filter(Province_State %in% US_cases$Province_State,
+               Date==max(Date)) %>% 
+        mutate(Date=Date+1,
+               days_inc=days_inc+1,
+               lag_ci4=lag_ci3,
+               lag_ci3=lag_ci2,
+               lag_ci2=lag_ci1,
+               lag_ci1=cum_inc,
+               cum_inc=NA,
+               cum_diff=lag_ci1/lag_ci2,
+               cum_diff2=(lag_ci1/lag_ci2)/(lag_ci2/lag_ci3),
+               inc_lag2=inc_lag1,
+               inc_lag1=inc_lag0,
+               inc_lag0=NA,
+               Incidence=NA)
+}
+pred_dist <- function(fit_object,
+                      new_data,
+                      coef_perms,
+                      draws){
+    test_fit <- predict(fit_object, new_data, type = "lpmatrix")
+    rep_params <- rmvn(coef_perms, coef(fit_object), fit_object$Vp) # replicate param. vectors
+    pred_count <- matrix(0, nrow=nrow(new_data), ncol=coef_perms)
+    for (i in 1:coef_perms) {
+        rep_preds <- test_fit %*% rep_params[i,] # replicate predictions
+        pred_count[,i] <- pmax(exp(rep_preds)*new_data$lag_ci1-new_data$lag_ci1,0)
+    }
+    all_preds <- rpois(nrow(pred_count)*coef_perms*draws,
+                       lambda=as.vector(pred_count))
+    return(all_preds)
+}
+
+all_fit <- gam(pred_formula,
+               data=all_cases, family=poisson())
+pred_dat <- make_new_pred_data(all_cases)
+preds <- pred_dist(fit_object=all_fit, new_data=pred_dat,
+                        coef_perms=10, draws=10) %>% 
+                  matrix(nrow=50)
+
+all_preds <- foreach(i=seq(ncol(preds)), .combine=rbind) %dopar% {
+    # pred_dat %>% 
+    #     mutate(cum_inc=preds[,i],
+    #            cum_inc=ifelse(cum_inc < lag_ci1, lag_ci1, cum_inc),
+    #            Incidence=cum_inc-lag_ci1,
+    #            inc_lag0=Incidence,
+    #            sim=i)
+    pred_dat %>% 
+        mutate(Incidence=preds[,i],
+               inc_lag0=Incidence,
+               cum_inc=lag_ci1+Incidence,
+               sim=i)
+}
+```
+
+```{r make-preds}
+pred_steps <- 13
+
+for(step in 1:pred_steps){
+    tmp_preds <- foreach(i=1:100, .combine=rbind) %dopar% {
+        tmp_dat <- make_new_pred_data(all_preds %>% filter(sim==i))
+        tmp_dist <- (pred_dist(fit_object=all_fit, new_data=pred_dat,
+                           coef_perms=10, draws=10) %>% 
+            matrix(nrow=50))[,sample(100,1),drop=T]
+        
+        # tmp_dat %>% 
+        #     mutate(cum_inc=tmp_dist,
+        #            cum_inc=ifelse(cum_inc < lag_ci1, lag_ci1, cum_inc),
+        #            Incidence=cum_inc-lag_ci1,
+        #            inc_lag0=Incidence)
+        tmp_dat %>% 
+            mutate(Incidence=tmp_dist,
+                   inc_lag0=Incidence,
+                   cum_inc=lag_ci1+Incidence)
+    }
+    all_preds <- bind_rows(all_preds, tmp_preds)
+}
+all_preds %>% 
+    group_by(sim, Date) %>% 
+    summarize(cs=sum(cum_inc),
+              inc=sum(Incidence)) %>% 
+    group_by(Date) %>% 
+    summarize(cs_med=median(cs),
+              cs_lb=quantile(cs, probs=.025),
+              cs_ub=quantile(cs, probs=.975),
+              inc_med=median(inc),
+              inc_lb=quantile(inc, probs=.025),
+              inc_ub=quantile(inc, probs=.975))
+```
+
