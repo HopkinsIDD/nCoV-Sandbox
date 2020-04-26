@@ -22,6 +22,7 @@ require(lubridate)
 source("../R/DataLoadUtils.r")
 source("../R/BasicEpiAnalyses.r")
 source("../R/CFRutils.r")
+source("../R/mle_utils.R")
 
 ```
 
@@ -64,83 +65,6 @@ $$E(r_{jt}) =  n_{jt} (\lambda_2) $$
 
 Because there appear to be differences in mortality and recovery rates bewteen Hubei and elsewhere, we will write $\lambda_1$ and $\lamnbda_2$ as a function of location, such that $\lambda_1 = exp(\beta_0 + \beta_1 Hubei)$ and $\lambda_2 = exp(\gamma_0 + \gamma_1 Hubei)$.
 
-## Assuming constant hazards of death and recovery
-### Stan models
-First, define the stan model assuming constant hazards for death and recovery over time.
-
-```{stan, eval = FALSE, output.var="cfrmdl2"}
-
-data {
-  int <lower=0> T; //the number of time steps included
-  int <lower=0> L; //the number of locations we have data from
-  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
-  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
-  real <lower=0> c[T,L]; //number of new cases  on each day. 
-  int w[L]; //is this wuhan
-  int Nd; // number of indiviudal-level deaths
-  int Nr; // number of individual-level recoveries
-  int wdi[Nd]; // indicator of living in hubei for individual deaths
-  int wri[Nr]; // indicator of living in hubei for individual recoveries
-  real td[Nd]; // time to each individual deaths
-  real tr[Nr]; //time to each individual recoveries
-}
-
-parameters {
-  real  loglambda1; //parameter for time to death distribution
-  real  loglambda2; // parameter for time to recovery distribution
-  real delta1_hubei; // parameter for difference in lambda1 in hubei
-  real delta2_hubei; // parameter for difference in lambda2 in hubei
-  real <lower= 0, upper=1> dr; // wuhan detect rate
-}
-
-transformed parameters {
-  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
-  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
-  real <lower=0> expected_riskset[T,L]; // expected people in risk set
-  real <lower=0> lambda1i[Nd]; // lambda1 for each individual-level death
-  real <lower=0> lambda2i[Nr]; //lmabda2 for each individual-level recovery
-
-for (j in 1:L) {
-    expected_riskset[1,j] = c[1,j];
-    expected_deaths[1,j] = expected_riskset[1,j] * exp(loglambda1 + delta1_hubei*w[j]) + 0.0001 ;
-    expected_recovereds[1,j] = expected_riskset[1,j] * exp(loglambda2 + delta2_hubei*w[j]) + 0.0001;
- 
-    for (t in 2:T) {
-      expected_riskset[t,j] =  expected_riskset[t-1,j] + c[t,j] - 
-                                expected_deaths[t-1,j] - expected_riskset[t-1,j] * exp(loglambda2 + delta2_hubei*w[j]);
-      expected_deaths[t,j] = expected_riskset[t,j] * exp(loglambda1 + delta1_hubei*w[j]) + 0.0001 ;
-      expected_recovereds[t,j] = expected_riskset[t,j] * exp(loglambda2 + delta2_hubei*w[j]) + 0.0001;
-      
-    }
-  }
-  for (i in 1:Nd){
-  lambda1i[i] = exp(loglambda1 + delta1_hubei*wdi[i]);
-}
-  for (g in 1:Nr){
-   lambda2i[g] = exp(loglambda2 + delta2_hubei*wri[g]);
-  }
-}
-
-
-
-
-model {
-  //definitely can be made more effcient.
-  for (j in 1:L) {
-    for (t in 1:T) {
-      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
-    }
-  }
- for (i in 1:Nd){
-  target+=exponential_lpdf(td[i]|lambda1i[i]);
- }
-  for (g in 1:Nr){
-  target+=exponential_lpdf(tr[g]|lambda2i[g]);
- }
-}
-
-```
-
 ### Data management
 Prepare aggregate data on total cases, deaths, and recoveries by calendar date to be read into model.  
 
@@ -148,38 +72,269 @@ Prepare aggregate data on total cases, deaths, and recoveries by calendar date t
 library(readr)
 library(tidyverse)
 #Load in the JHU CSSE Data
-todaydate <- ISOdate(2020,2,25, hour = 11, min = 59, tz = "UTC")
-cfr_moddata <- moddata(todaydate, withHubei = TRUE)
-#(cfr_moddata, file = "cfr_moddata.RData")
+todaydate <- ISOdate(2020,4,9, hour = 11, min = 59, tz = "UTC")
+cfr_moddata_all <- moddata_country(todaydate)
+cfr_moddata <-cfr_moddata_all[[1]]
+locs <- cfr_moddata_all[[2]] #get lookup table
 
 #prepare individual-level data
-date <-ymd("20200214")
-IndDat <- read_MK_linelist("2-14-2020")
+date <-ymd("20200305")
+IndDat <- read_MK_linelist("3-5-2020")
 IndDat <- process_MK_linelist(IndDat, ymd(date))
 
-IndDat <- IndDat %>% 
-            mutate(t = ifelse(t<=0, 1, t)) 
 
-deaths <- IndDat %>% filter(delta == 1 & !is.na(t)) %>% select(t, province)
-recovs <-   IndDat %>% filter(delta == 2& !is.na(t)) %>% select(t, province)
+IndDat <- IndDat %>% 
+            mutate(t = ifelse(t<=0, 1, t)) %>% 
+            mutate(country=replace(country, country=="United States", "US")) %>%
+            mutate(country=replace(country, country=="United Kingdom", "UK")) %>%
+            mutate(country=replace(country, country=="China", "Mainland China")) %>%
+            mutate(country2 = ifelse((province == "Hubei" & !is.na(province)) | is.na(country), province, country)) %>% 
+            mutate(loc = locs[country2])
+          
+
+deaths <- IndDat %>% filter(delta == 1 & !is.na(t) & t>1) %>% select(t, country2, loc)
+recovs <-   IndDat %>% filter(delta == 2& !is.na(t)& t>1) %>% select(t, country2, loc)
+
 td <- deaths$t
-wdi <- ifelse(deaths$province != "Hubei" | is.na(deaths$province), 0, 1)
+wdi <- deaths$loc
 tr <- recovs$t
-wri <- ifelse(recovs$province != "Hubei" | is.na(recovs$province), 0, 1)
+wri <- recovs$loc
 
 cfr_moddata$tr <- tr
-cfr_moddata$td <- td
+cfr_moddata$td <- ifelse(td>nrow(cfr_moddata$c), nrow(cfr_moddata$c), td)
 cfr_moddata$wdi <- wdi
 cfr_moddata$wri <- wri
 cfr_moddata$Nd <- length(td)
 cfr_moddata$Nr <- length(tr)
+
+#make some plots to double check that data looks ok
+#confirmed
+ys <- NULL
+
+ for(i in 1:ncol(cfr_moddata$c)){
+  ys <- c(ys, cfr_moddata$c[,i])
+}
+test <- data.frame(x= rep(c(1:cfr_moddata$T), ncol(cfr_moddata$c)), loc = rep(1:ncol(cfr_moddata$c), each = cfr_moddata$T), y=ys)
+
+ggplot(test, aes(x=x, y=ys, colour = loc, group=loc))+
+  geom_line()
+
+#deaths
+ys <- NULL
+
+ for(i in 1:ncol(cfr_moddata$d)){
+  ys <- c(ys, cfr_moddata$d[,i])
+}
+test <- data.frame(x= rep(c(1:cfr_moddata$T), ncol(cfr_moddata$d)), loc = rep(1:ncol(cfr_moddata$d), each = cfr_moddata$T), y=ys)
+
+ggplot(test, aes(x=x, y=ys, colour = loc, group=loc))+
+  geom_line()
+
+
+#recovs
+ys <- NULL
+
+ for(i in 1:ncol(cfr_moddata$d)){
+  ys <- c(ys, cfr_moddata$r[,i])
+}
+test <- data.frame(x= rep(c(1:cfr_moddata$T), ncol(cfr_moddata$r)), loc = rep(1:ncol(cfr_moddata$r), each = cfr_moddata$T), y=ys)
+
+ggplot(test, aes(x=x, y=ys, colour = loc, group=loc))+
+  geom_line()
+
+
 ```
+
+
+
+## Assuming constant hazards of death and recovery
+### Stan models
+First, define the stan model assuming constant hazards for death and recovery over time.
+
+```{stan, eval = FALSE, output.var="cfrmdl_exp"}
+
+
+// Input data 
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  int <lower = 0> V; // max infection duration (may not be needed)
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> c[T,L]; //number of new cases  on each day. 
+  int w[L]; //is this wuhan
+  int Nd; // number of indiviudal-level deaths
+  int Nr; // number of individual-level recoveries
+  //vector[Nd] wdi; // indicator of living in hubei for individual deaths
+ // vector[Nr] wri; // indicator of living in hubei for individual recoveries
+  int wdi[Nd]; // indicator of living in hubei for individual deaths
+  int wri[Nr]; // indicator of living in hubei for individual recoveries
+  int td[Nd]; // time to each individual deaths
+  int tr[Nr]; //time to each individual recoveries
+}
+
+parameters {
+  real loglambda1; //parameter for time to death distribution
+  real loglambda2; // parameter for time to death or recovery distribution
+  real delta1_hubei; //parameter for diff in hubei's lambda1
+  real delta2_hubei; // parameter for diff in hubei's lambda2
+}
+
+transformed parameters {
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  matrix[T,L] expected_riskset; //expected risk set on each day of inf dur
+  real <lower=0> h1;
+  real <lower=0> h2;
+  
+ expected_riskset = rep_matrix(0.0, T,L);  // initialize expected_riskset to all 0s;
+  for (j in 1:L) {
+ 
+    h1 = exp(loglambda1 + delta1_hubei*w[j]);
+    h2 = exp(loglambda2 + delta2_hubei*w[j]);
+    expected_riskset[1,j] = c[1,j]; //risk set on day 1 at inf duration 1 is just c1
+    expected_deaths[1,j] = expected_riskset[1,j] * h1  ;
+    expected_recovereds[1,j] = expected_riskset[1,j] * h2 ;
+ 
+    for (t in 2:T) {
+      expected_riskset[t,j] = (expected_riskset[t-1,j] + c[t,j] - (expected_riskset[t-1,j]*h1 +  (expected_riskset[t-1,j]* h2)));
+      expected_deaths[t,j] = expected_riskset[t,j] *  h1  ;
+      expected_recovereds[t,j] = expected_riskset[t,j] *  h2 ;
+    } 
+  }
+}
+
+model {
+  //definitely can be made more effcient.
+  //aggregate data
+  for (j in 1:L) { 
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
+    }
+  }
+  //individual data
+    for (g in 1:Nd) {
+      target+=log(exp(loglambda1+wdi[g]*delta1_hubei)*exp(-(exp(loglambda1+wdi[g]*delta1_hubei)+exp(loglambda2+wdi[g]*delta2_hubei))*(td[g]))) ;//log(h1(t)*S(t-))
+      }
+    for (h in 1:Nr){
+       target+=log(exp(loglambda2+wri[h]*delta2_hubei)*exp(-(exp(loglambda1+wri[h]*delta1_hubei)+exp(loglambda2+wri[h]*delta2_hubei))*(tr[h]))) ; //log(h2(t)*S(t-))
+    }
+}
+
+
+```
+
+Exponential model with random effect
+
+```{stan, eval = FALSE, output.var="cfrmdl_exp_rand"}
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  int <lower = 0> V; // max infection duration (may not be needed)
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> c[T,L]; //number of new cases  on each day. 
+  int w[L]; //is this wuhan
+  int Nd; // number of indiviudal-level deaths
+  int Nr; // number of individual-level recoveries
+  //vector[Nd] wdi; // indicator of living in hubei for individual deaths
+  // vector[Nr] wri; // indicator of living in hubei for individual recoveries
+  int wdi[Nd]; // indicator of living in hubei for individual deaths
+  int wri[Nr]; // indicator of living in hubei for individual recoveries
+  int td[Nd]; // time to each individual deaths
+  int tr[Nr]; //time to each individual recoveries
+}
+
+parameters {
+  real loglambda1i[L]; //parameter for time to death distribution for each location
+  real loglambda2i[L]; // parameter for time to death or recovery distribution for each location
+  real loglambda1; // parameter for time to death overall
+  real loglambda2; // patmeter for tiem to recovery overall
+  real<lower=0> tau1; // variance bewteen countries
+  real<lower=0> tau2; // variance bewteen countries
+  
+}
+transformed parameters {
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+    real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+      matrix[T,L] expected_riskset; //expected risk set on each day of inf dur
+    real <lower=0> h1;
+    real <lower=0> h2;
+    
+    
+    
+    expected_riskset = rep_matrix(0.0, T,L);  // initialize expected_riskset to all 0s;
+    for (j in 1:L) {
+      
+      h1 = exp(loglambda1i[j]);
+      h2 = exp(loglambda2i[j]);
+      
+      
+      expected_riskset[1,j] = c[1,j]; //risk set on day 1 at inf duration 1 is just c1
+      expected_deaths[1,j] = expected_riskset[1,j] * h1  ;
+      expected_recovereds[1,j] = expected_riskset[1,j] * h2 ;
+      
+      
+      for (t in 2:T) {
+        expected_riskset[t,j] = (expected_riskset[t-1,j] + c[t,j] - (expected_riskset[t-1,j]*h1 +  (expected_riskset[t-1,j]* h2)));
+        expected_deaths[t,j] = expected_riskset[t,j] *  h1  ;
+        expected_recovereds[t,j] = expected_riskset[t,j] *  h2 ;
+      } 
+    }
+    
+    
+}
+
+model {
+  //definitely can be made more effcient.
+  //aggregate data
+  loglambda1i ~ normal(loglambda1, tau1);
+  loglambda2i ~ normal(loglambda2, tau2);
+  for (j in 1:L) { 
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
+    }
+  }
+  //individual data
+  for (g in 1:Nd) {
+    target+=log(exp(loglambda1i[wdi[g]])*exp(-(exp(loglambda1i[wdi[g]])+exp(loglambda2i[wdi[g]]))*(td[g]))) ;//log(h1(t)*S(t-))
+  }
+  for (h in 1:Nr){
+    target+=log(exp(loglambda2i[wri[h]])*exp(-(exp(loglambda1i[wri[h]])+exp(loglambda2i[wri[h]]))*(tr[h]))) ; //log(h2(t)*S(t-))
+  }
+  
+}
+
+
+```
+
+
+
 
 ### Run Exponential model
 
+First run exponential model with maximum likelihood (with aggregate + individual data)
+```{r}
+#starting values
+b <- c(log(0.001), log(0.01))
+exp.mdl <- optim(b, LLexp.ind, data = cfr_moddata)
+exp(exp.mdl$par)
+lambda1 <- exp(exp.mdl$par)[1]
+lambda2 <- exp(exp.mdl$par)[2]
+ rho <- integrate(function(x) {   
+                                          risk.Inf <- lambda1*exp(- ((lambda1*x +lambda2*x)))
+                                          return(risk.Inf)
+    },
+                        lower = 0, upper =Inf)$value
+rho
+
+```
+
+Now run exponential with MCMC
+
 ```{r, eval = FALSE}
-  cfrmdl_res_ex <- sampling(cfrmdl2, data=cfr_moddata,
-                         iter=2000, cores = 4, chains = 4)
+  cfrmdl_res_ex <- sampling(cfrmdl_exp, data=cfr_moddata,
+                         iter=200, cores = 4, chains = 4)
   chains <- extract(cfrmdl_res_ex)
   lambda1 <- exp(chains$loglambda1)
   lambda2 <- exp(chains$loglambda2)
@@ -188,7 +343,7 @@ cfr_moddata$Nr <- length(tr)
   
   outdat <- data.frame(lambda1 = lambda1, lambda2 = lambda2, lambda1_hubei = lambda1_hubei, lambda2_hubei = lambda2_hubei)
   
-  save(outdat, file = "data/outdat.RData")
+  #save(outdat, file = "data/outdat.RData")
 
 ```
 
@@ -196,7 +351,7 @@ cfr_moddata$Nr <- length(tr)
 
 
 ```{r, echo = FALSE }
-load("data/outdat.RData")
+#load("data/outdat.RData")
 
 lambda2 <- outdat[,2]
 lambda1 <- outdat[,1] 
@@ -218,24 +373,20 @@ for(i in 1:length(lambda1)){
 rho <- rho[!is.na(rho)]
 median(rho)
 
+rho_exp <- matrix(nrow = length(lambda1))
 
+ for(i in 1:length(lambda1)){
+  try (
+    rho_exp[i] <- integrate(function(x) {   
+                                          risk.Inf <- lambda1[i]*exp(- ((lambda1[i]*x +lambda2[i]*x)))
+                                          return(risk.Inf)
+    },
+                        lower = 0, upper =Inf)$value)
+}
 
-#  
-# for(i in 1:length(lambda1)){
-# 
-#   try (
-#     rho[i] <- integrate(function(x) {lambda1[i]*exp(-((lambda1[i]+lambda2[i])*x))}, 
-#                         lower = 0, upper = Inf)$value)
-# }
-# 
-# rho <- rho[!is.na(rho)]
-# 
-# #rho for outside hubei
-# median(rho)
-quantile(rho, probs = c(.025, .975))
-
-# plot(density(rho))
-# plot(log(rho), type = "l")
+rho_exp <- rho_exp[!is.na(rho_exp)]
+median(rho_exp)
+quantile(rho_exp, probs = c(.025, .975))
 
 
  #then estimate rho for hubei
@@ -262,166 +413,80 @@ median(rho_hubei)
 # median(rho_hubei)
 quantile(rho_hubei, probs = c(.025, .975))
 # plot(density(rho_hubei))
- plot(log(lambda1), type = "l")
-
-```
-
-## Allow hazard to vary over large time periods 
-
-### Stan model for piecewise exponential model
-Need to figure out why this is not working (it was when compartments were hardcoded)
-```{stan, eval = FALSE, output.var="cfrmdl_pw"}
-
-data {
-  int <lower=0> T; //the number of time steps included
-  int <lower=0> L; //the number of locations we have data from
-  int <lower = 0> V; // max infection duration (may not be needed)
-  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
-  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
-  real <lower=0> c[T,L]; //number of new cases  on each day. 
-  int w[L]; //is this wuhan
-  int N; //the numberof compartments.
-  int indices[V]; //vector of integer indices indicating which hazard people on each day are subject to
-}
-
-parameters {
-  real loglambda1[N]; //parameter for time to death distribution
-  real loglambda2[N]; // parameter for time to death or recovery distribution
-  real delta1_hubei; //parameter for diff in hubei's lambda1
-  real delta2_hubei; // parameter for diff in hubei's lambda2
-}
-transformed parameters {
-  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
-  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
-  matrix<lower=0>[V,T] expected_riskset; //expected risk set on each day of inf dur
-  vector<lower=0>[N] h1;
-  vector<lower=0>[N] h2;
- // vector[V] h1k;
- // vector[V] h2k;
-  //real <lower=0> h1[V] ;
-  //real <lower=0> h2[V];
-
-for (j in 1:L) {
-  // initialize expected_riskset to all 0s;
-    expected_riskset = rep_matrix(0.0, V, T);
-    h1 = rep_vector(0, N); // or N
-    h2 = rep_vector(0, N); // or N
- //   for(k in 1:V){ //pre-compute hazards for each day of inf dur (do dno't have to do within each loop!)
- //       for(h in 1:N){
- //       h1[k] += exp(loglambda1[h] + delta1_hubei*w[j])*(((T/N)*(h-1))<k<=((T/N)*h));
- //       h2[k] += exp(loglambda2[h] + delta2_hubei*w[j])*(((T/N)*(h-1))<k<=((T/N)*h));
- //       }
- //     }
-    if(N==1){
-      h1[1] = exp(loglambda1[1] + delta1_hubei*w[j]);
-      h2[1] = exp(loglambda2[1] + delta2_hubei*w[j]);
-    }
-    if(N>1){
-      for(h in 1:N){ //pre-compute hazards for each  interval (do dno't have to do within each loop!)
-      h1[h] = exp(loglambda1[h] + delta1_hubei*w[j]);
-      h2[h] = exp(loglambda2[h] + delta2_hubei*w[j]);
-    }
-    }
-
-    
-    expected_riskset[1,1] = c[1,j]+0.0001; //risk set on day 1 at inf duration 1 is just c1
-    expected_deaths[1,j] = expected_riskset[1,1] * h1[1] + 0.0001 ;
-    expected_recovereds[1,j] = expected_riskset[1,1] * h2[1] + 0.0001;
- 
-
-    for (t in 2:T) {
-      expected_riskset[1,t] = c[t,j]+0.0001;
-      expected_deaths[t,j] = expected_riskset[1,t] *  h1[1] + 0.0001 ;
-      expected_recovereds[t,j] = expected_riskset[1,t] *  h2[1] + 0.0001;
-      
-      //fix this section to allow for arbitrary number of compartments (right now just 3)
-      for(k in 2:t){
-        expected_riskset[k,t] = (expected_riskset[k-1,t-1] - 
-                                (expected_riskset[k-1,t-1]*h1[indices[k-1]] +  
-                                (expected_riskset[k-1,t-1]*h2[indices[k-1]]))+0.0001);
-        expected_deaths[t,j] +=  (expected_riskset[k,t] * h1[indices[k]]);
-        expected_recovereds[t,j] += (expected_riskset[k,t] * h2[indices[k]]);
-
-      }
-    
-    }
-  }
-}
-
-model {
-  //definitely can be made more effcient.
-  for (j in 1:L) {
-    for (t in 1:T) {
-      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
-    }
-  }
- 
-}
+ plot((lambda1), type = "l")
 
 ```
 
 
-### Run and summarize piecewise exponential model
-```{r, eval = FALSE}
-cfr_moddata_pw <- cfr_moddata
-cfr_moddata_pw$N <- 2
-cfr_moddata_pw$indices <- vector(length = cfr_moddata_pw$V)
-for(j in 1:length(cfr_moddata_pw$indices)){
-  for(i in 1:cfr_moddata_pw$N){
-    cfr_moddata_pw$indices[j] <- sum(((((cfr_moddata_pw$T/cfr_moddata_pw$N)*(i-1))<j) & (j<=((cfr_moddata_pw$T/cfr_moddata_pw$N)*i)))*i, cfr_moddata_pw$indices[j])
-  }
+The following code runs the above exponential model with the random effect
+
+```{r}
+initval <- function(){
+  loglambda1i <- rep(-6, cfr_moddata$L)
+  loglambda2i <- rep(-6, cfr_moddata$L)
+  tau1 <- 0.001
+  tau2 <- 0.001
+    params <- list(loglambda1i=loglambda1i, loglambda2i=loglambda2i, loglambda1 = loglambda1i[1], loglambda2 = loglambda2i[1], tau1 = tau1, tau2=tau2)
+    params
+    #list(params, params, params, params)
 }
+cfrmdl_exp<- sampling(cfrmdl_exp_rand, data=cfr_moddata,
+                         iter=200, cores = detectCores(), verbose = FALSE, init=initval)
+chains <- rstan::extract(cfrmdl_exp)
+lambda1 <- exp(chains$loglambda1)
+lambda2 <- exp(chains$loglambda2)
+lambda1i <- exp(chains$loglambda1i)
+lambda2i <- exp(chains$loglambda2i)
+alpha1 <- 1
+alpha2 <- 1
 
-  cfrmdl_res <- sampling(cfrmdl_pw, data=cfr_moddata_pw,
-                         iter=3000, chains = 6, cores = 6)
-  chains <- extract(cfrmdl_res)
-  lambda1 <- as.matrix(exp(chains$loglambda1))
-  lambda2 <- as.matrix(exp(chains$loglambda2))
-  lambda1_hubei <- as.matrix(exp(apply(chains$loglambda1, 2, function(x) x + chains$delta1_hubei)))
-  lambda2_hubei <- as.matrix(exp(apply(chains$loglambda2, 2, function(x) x + chains$delta2_hubei)))
-  
-  #estimate rho outside hubei
-  
-rho <- matrix(nrow = nrow(lambda1))
-T <- (cfr_moddata_pw$T)
-N <- cfr_moddata_pw$N
 
-#need to adapt this for an arbitrary number of compartments
-for(i in 1:nrow(lambda1)){
+```
 
+
+this code computes the CFR
+
+```{r, echo = FALSE }
+
+#overall CFR
+rho <- matrix(nrow = length(lambda1))
+
+ for(i in 1:length(lambda1)){
   try (
-    rho[i] <- integrate(function(x) {
-      (lambda1[,1][i] * (x<T/N) + lambda1[,2][i] * ((T/N<x) & (x<(2*T/N))))  * exp(-(( (lambda1[,1][i]*(x<T/N)+lambda1[,2][i] * ((T/N<x) & (x<(2*T/N))))
-              + (lambda2[,1][i]*(x<T/N)+lambda2[,2][i]*((T/N<x) & (x<(2*T/N))))) 
-              * x)
-             )} , lower = 0, upper = Inf)$value)
+    rho[i] <- integrate(function(x) {   
+                                          risk.Inf <- lambda1[i]*exp(- ((lambda1[i]*x +lambda2[i]*x)))
+                                          return(risk.Inf)
+    },
+                        lower = 0, upper =Inf)$value)
 }
-rho <- rho[!is.na(rho)]
+
+
 median(rho)
 quantile(rho, probs = c(.025, .975))
 
-#estimate rho in hubei
 
-rho_hubei <- matrix(nrow = nrow(lambda1))
-for(i in 1:nrow(lambda1)){
+#CFR by location
 
+selectedlocs <- vector(length = cfr_moddata$L)
+rhoi <- matrix(nrow=length(lambda1), ncol = length(selectedlocs))
+for(j in 1:cfr_moddata$L){
+  for(i in 1:length(lambda1i[,j])){
   try (
-    rho_hubei[i] <- integrate(function(x) {
-      (lambda1_hubei[,1][i] * (x<T/N) + lambda1_hubei[,2][i] * ((T/N<x) & (x<(2*T/N))))  * exp(-(( (lambda1_hubei[,1][i]*(x<T/N)+lambda1_hubei[,2][i] * ((T/N<x) & (x<(2*T/N))))
-              + (lambda2_hubei[,1][i]*(x<T/N)+lambda2_hubei[,2][i]*((T/N<x) & (x<(2*T/N)))) 
-              * x)
-             ))} , lower = 0, upper = Inf)$value)
+    rhoi[i,j] <- integrate(function(x) {   
+                                          risk.Inf <- lambda1i[i,j]*exp(- ((lambda1i[i,j]*x +lambda2i[i,j]*x)))
+                                          return(risk.Inf)
+    },
+                        lower = 0, upper =Inf)$value)
+}
 }
 
-rho_hubei <- rho_hubei[!is.na(rho_hubei)]
-median(rho_hubei)
-quantile(rho_hubei, probs = c(.025, .975))
+rhoj <- vector(length = cfr_moddata$L)
+for(j in 1:cfr_moddata$L){
+  rhoj[j] <- median(rhoi[,j])
+}
+names(rhoj) <- names(locs[-c(189)])
+rhoj
 
-
-plot(density(lambda1[,1]), xlim=c(0,.1), type = "l")
- lines(density(lambda2[,1]))
- plot(log(lambda1[,1]), type = "l")
- plot(log(lambda2[,1]), type = "l")
 ```
 
 ## Allow hazard to vary by day of infection
@@ -437,93 +502,75 @@ data {
   int <lower = 0> V; // max infection duration (may not be needed)
   int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
   int <lower=0> d[T,L]; //  number of deaths reported on each day. 
- //  int <lower=0> dr[T,L]; //  number of deaths reported on each day. 
   real <lower=0> c[T,L]; //number of new cases  on each day. 
   int w[L]; //is this wuhan
     int Nd; // number of indiviudal-level deaths
   int Nr; // number of individual-level recoveries
-  int wdi[Nd]; // indicator of living in hubei for individual deaths
-  int wri[Nr]; // indicator of living in hubei for individual recoveries
-  real td[Nd]; // time to each individual deaths
-  real tr[Nr]; //time to each individual recoveries
+  //vector[Nd] wdi; // indicator of living in hubei for individual deaths
+  //vector[Nr] wri; // indicator of living in hubei for individual recoveries
+  real whd[Nd]; // indicator of living in hubei for individual deaths
+  real whr[Nr]; // indicator of living in hubei for individual recoveries
+  int td[Nd]; // time to each individual deaths
+  int tr[Nr]; //time to each individual recoveries
 }
 
 parameters {
   real loglambda1; //parameter for time to death distribution
   real loglambda2; // parameter for time to death or recovery distribution
-   //real loglambda; // parameter for time to death or recovery distribution
   real delta1_hubei; //parameter for diff in hubei's lambda1
   real delta2_hubei; // parameter for diff in hubei's lambda2
-  //real delta_hubei; // parameter for diff in hubei's lambda2
   real  logalpha1; //parameter for time to death distribution
   real  logalpha2; // parameter for time to death or recovery distribution
-  // real  logalpha; // parameter for time to death or recovery distribution
- // real <lower=0> invalpha1; //parameter for time to death distribution
-  //real  <lower=0> invalpha2; // parameter for time to death or recovery distribution
+
 }
 transformed parameters {
   real <lower=0> expected_deaths[T,L]; //  # deaths at time T
   real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
- // real <lower=0> expected_rds[T,L]; //  # those who have exited due to recovery at T
   matrix[V,T] expected_riskset; //expected risk set on each day of inf dur
   vector[V] h1;
   vector[V] h2;
-  // vector[V] hall;
   real <lower=0> alpha1; //parameter for time to death distribution
  real <lower=0> alpha2; // parameter for time to death or recovery distribution
- real <lower=0> lambda1i[Nd]; // lambda1 for each individual-level death
-  real <lower=0> lambda2i[Nr]; //lmabda2 for each individual-level recovery
- //real <lower=0> alpha;
+//  vector[Nd] lambda1i; // lambda1 for each individual-level death
+//  vector[Nr] lambda2i; //lmabda2 for each individual-level recovery
+//  real <lower=0> indiv_expected_risk[V]; //looking a very long way out where would we expect an individual to be
+//  real <lower=0> indiv_expect_death [V]; //what is an indivduals probability of dying on exactly each day
+//  real <lower=0> indiv_expect_recover [V]; //what is an individauls probability of recovering on each day
+
   alpha1 = exp(logalpha1);
   alpha2 = exp(logalpha2);
-  // alpha = exp(logalpha);
-
 
 
 
 for (j in 1:L) {
-  // initialize expected_riskset to all 0s;
-    expected_riskset = rep_matrix(0.0, V, T);
-    h1 = rep_vector(0, V);
-    h2 = rep_vector(0, V);
-   //  hall = rep_vector(0, V);
-    for(h in 1:V){ //pre-compute hazards at each time (do dno't have to do within each loop!)
-      h1[h] = alpha1*exp(loglambda1 + delta1_hubei*w[j])*h^(alpha1-1);
-      h2[h] = alpha2*exp(loglambda2 + delta2_hubei*w[j])*h^(alpha2-1);
-    //  hall[h] = alpha*exp(loglambda + delta_hubei*w[j])*h^(alpha-1);
-    }
+   expected_riskset = rep_matrix(0.0, V, T);  // initialize expected_riskset to all 0s;
+  h1 = rep_vector(0, V);
+  h2 = rep_vector(0, V);
+  for(h in 1:V){ //pre-compute hazards at each time (do dno't have to do within each loop!)
+    h1[h] = alpha1*exp(loglambda1 + delta1_hubei*w[j])*h^(alpha1-1);
+    h2[h] = alpha2*exp(loglambda2 + delta2_hubei*w[j])*h^(alpha2-1);
+  } 
 
     expected_riskset[1,1] = c[1,j]+0.0001; //risk set on day 1 at inf duration 1 is just c1
     expected_deaths[1,j] = expected_riskset[1,1] * h1[1] + 0.0001 ;
     expected_recovereds[1,j] = expected_riskset[1,1] * h2[1] + 0.0001;
-   //  expected_rds[1,j] = expected_riskset[1,1] * hall[1] + 0.0001;
  
 
     for (t in 2:T) {
       expected_riskset[1,t] = c[t,j]+0.0001;
       expected_deaths[t,j] = expected_riskset[1,t] *  h1[1] + 0.0001 ;
       expected_recovereds[t,j] = expected_riskset[1,t] *  h2[1] + 0.0001;
-      // expected_rds[t,j] = expected_riskset[1,t] *  hall[1] + 0.0001;
       
       for(k in 2:t){
       
-        expected_riskset[k,t] = (expected_riskset[k-1,t-1] - (expected_riskset[k-1,t-1]*h1[k-1] +  (expected_riskset[k-1,t-1]* h2[k-1]))+0.0001);
-       
-       // expected_riskset[k,t] = (expected_riskset[k-1,t-1] - (expected_riskset[k-1,t-1]*hall[k-1] )+0.0001);
+        expected_riskset[k,t] = (expected_riskset[k-1,t-1] - (expected_riskset[k-1,t-1]*h1[k-1] +  (expected_riskset[k-1,t-1]* h2[k-1])));
         expected_deaths[t,j] +=  (expected_riskset[k,t] * h1[k]);
         expected_recovereds[t,j] += (expected_riskset[k,t] * h2[k]);
-       //  expected_rds[t,j] += (expected_riskset[k,t] * hall[k]);
 
       }
     }
   }
 
- for (i in 1:Nd){
-  lambda1i[i] = exp(loglambda1 + delta1_hubei*wdi[i]);
-}
-  for (g in 1:Nr){
-   lambda2i[g] = exp(loglambda2 + delta2_hubei*wri[g]);
-  }
 }
 
 
@@ -532,149 +579,66 @@ for (j in 1:L) {
 
 model {
   //definitely can be made more effcient.
-  for (j in 1:L) {
+  //aggregate data
+  for (j in 1:L) { 
     for (t in 1:T) {
       target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
     }
   }
- for (i in 1:Nd){
-  target+=weibull_lpdf(td[i]|alpha1, lambda1i[i]);
- }
-  for (g in 1:Nr){
-  target+=weibull_lpdf(tr[g]|alpha2, lambda2i[g]);
- }
+  //individual data
+    for (g in 1:Nd) {
+      target+=log(alpha1*exp(loglambda1 + delta1_hubei*whd[g]) * td[g]^(alpha1-1) *exp(-(exp(loglambda1 + delta1_hubei*whd[g])*td[g]^alpha1+exp(loglambda2 + delta2_hubei*whd[g])*td[g]^alpha2)));//log(h1(t)*S(t-))
+      }
+    for (h in 1:Nr){
+     //target+= log(indiv_expect_recover[tr[h]]);
+      target+=log(alpha2*exp(loglambda2 + delta2_hubei*whr[h])*tr[h]^(alpha2-1)*exp(-(exp(loglambda1 + delta1_hubei*whr[h])*tr[h]^alpha1+exp(loglambda2 + delta2_hubei*whr[h])*tr[h]^alpha2)));
+    }
+
+
 }
+
 ```
-
-
 ### Run Weibull model
 
 ```{r, eval = FALSE}
-#cfr_moddata$dr <- cfr_moddata$d+cfr_moddata$r
-  cfrmdl_res_Wbl <- sampling(cfrmdl_wbl, data=cfr_moddata,
-                         iter=2000, cores = detectCores())
+cfr_moddata$whd <- as.numeric(cfr_moddata$wdi == 90) #indicator "is this hubei" (need to fix this because will change as countries are added)
+cfr_moddata$whr <- as.numeric(cfr_moddata$wri == 90)
+ cfrmdl_res_Wbl <- sampling(cfrmdl_wbl, data=cfr_moddata,
+                         iter=200, cores = 4, init=initval, verbose = FALSE)
   chains <- rstan::extract(cfrmdl_res_Wbl)
   lambda1 <- exp(chains$loglambda1)
   lambda2 <- exp(chains$loglambda2)
- #  lambda <- exp(chains$loglambda)
   lambda1_hubei <- exp(chains$loglambda1 + chains$delta1_hubei)
  lambda2_hubei <- exp(chains$loglambda2 + chains$delta2_hubei)
-#   lambda_hubei <- exp(chains$loglambda + chains$delta_hubei)
+
   alpha1 <- chains$alpha1
   alpha2 <- chains$alpha2
-  #  alpha <- chains$alpha
-   outdat_wbl <- data.frame(lambda1 = lambda1, lambda2 = lambda2, lambda1_hubei = lambda1_hubei, lambda2_hubei = lambda2_hubei, alpha1 = alpha1, alpha2 = alpha2)
-  # 
-   save(outdat_wbl, file = "data/outdat_wbl.RData")
+
 ```
 
-### Summarize Weibull model
-
+summarize
 ```{r, echo = FALSE }
-load("data/outdat_wbl.RData")
 
-lambda2 <- outdat_wbl[,2]
-lambda1 <- outdat_wbl[,1] 
-lambda2_hubei <- outdat_wbl[,4]
-lambda1_hubei <- outdat_wbl[,3] 
-alpha1 <- outdat_wbl[,5]
-alpha2 <- outdat_wbl[,6]
+#not  hubei
+rho <- matrix(nrow = length(lambda1))
 
-
-#first estimate rho outside hubei
-rho_wbl <- matrix(nrow = length(lambda1))
-
- for(i in 1:length(lambda1)){
+ for(i in 101:length(lambda1)){
   try (
-    rho_wbl[i] <- integrate(function(x) {   
-                                          risk.Inf <- alpha1[i]*lambda1[i]*x^(alpha1[i]-1)*exp(- ((lambda1[i]*x^(alpha1[i]) +lambda2[i]*x^(alpha2[i]))))
+    rho[i] <- integrate(function(x) {   
+                                            risk.Inf <- alpha1[i]*lambda1[i]*x^(alpha1[i]-1)*exp(- ((lambda1[i]*x^(alpha1[i]) +lambda2[i]*x^(alpha2[i]))))
                                           return(risk.Inf)
     },
-                        lower = 0, upper =100)$value)
+                        lower = 0, upper =Inf)$value)
 }
 
-rho_wbl <- rho_wbl[!is.na(rho_wbl)]
-median(rho_wbl)
-quantile(rho_wbl, probs = c(.025, .975))
-
-#then estimate rho in hubei
-rho_wbl_hubei <- matrix(nrow = length(lambda1_hubei))
-
- for(i in 1:length(lambda1_hubei)){
-  try (
-    rho_wbl_hubei[i] <- integrate(function(x) {   
-                                          risk.Inf <- alpha1[i]*lambda1_hubei[i]*x^(alpha1[i]-1)*exp(- ((lambda1_hubei[i]*x^(alpha1[i]) +lambda2_hubei[i]*x^(alpha2[i]))))
-                                          return(risk.Inf)
-    },
-                        lower = 0, upper =100)$value)
- }
-
-
-
-rho_wbl_hubei <- rho_wbl_hubei[!is.na(rho_wbl_hubei)]
-median(rho_wbl_hubei)
-quantile(rho_wbl_hubei, probs = c(.025, .975))
-
-#diagnostic plots
- plot((alpha2), type = "l")#, ylim = c(0,.00000000001))
-  plot((lambda1), type = "l")
-plot((rho_wbl), type = "l")
-# plot((lambda2), type = "l")#, ylim =c( 0, 100000))
-
-
-#parking lot for stuff that didn't work
-# 
-# for(i in 1:length(lambda1)){
-#   try (
-#     rho_wbl_hubei[i] <- integrate(function(x){alpha1[i]*lambda1_hubei[i]*x^(alpha1[i]-1)*exp(-(alpha1[i]*lambda1_hubei[i]*x^(alpha1[i]-1)+alpha2[i]*lambda2_hubei[i]*x^(alpha2[i]-1))*x)},
-#                         lower = 0, upper = Inf)$value)
-# }
-
- 
-#  for(i in 1:length(lambda1)){
-#   try (
-#     rho_wbl[i] <- integrate(function(x) {   
-#                                           risk.Inf <- alpha1[i]*lambda1[i]*x^(alpha1[i]-1)
-#                                     *exp(- ((alpha1[i]*lambda1[i]*x^(alpha1[i]-1)
-#                                              +alpha2[i]*lambda2[i]*x^(alpha2[i]-1))*x))
-#                                           return(risk.Inf)
-#     },
-#                         lower = 0, upper =100)$value)
-# }
-
-
-
-# rho_wbl <- matrix(nrow = length(lambda1))
-# rho_wbl_h <- matrix(nrow = length(lambda1))
-# for(i in 1:length(lambda1)){
-#   #outside hubei
-#   # F <- antiD( ((alph1*lam1^alph1*x^(alph1-1) )  *  exp(-(((lam2*x)^alph2)))  )~x, 
-#   #             alph1=alpha1[i], lam1 = lambda1[i], lam2 = lambda[i], alph2 = alpha[i])
-#   # rho_wbl[i] = F(x=Inf) - 0#F(x=0)
-# 
-#     F <- antiD( ((alph1*lam1^alph1*x^(alph1-1) )  *  exp(-(( ((alph1*lam1^alph1*x^(alph1-1) )*x)^alph1 + ((alph2*lam2*x^(alph2-1) )*x)^alph2)))  )~x,
-#               alph1=alpha1[i], lam1 = lambda1[i], lam2 = lambda2[i], alph2 = alpha2[i])
-# 
-#   rho_wbl[i] = F(x=Inf)  #- 0#F(x=0)
-# 
-#   # hubei
-#   Fh <- antiD( ((alph1*lam1^alph1*x^(alph1-1) )  *  exp(-(( ((alph1*lam1^alph1*x^(alph1-1) )*x^alph1) + ((alph2*lam2^alph2*x^(alph2-1) )*x^alph2)))  ))~x, 
-#               alph1=alpha1[i], lam1 = lambda1_hubei[i], lam2 = lambda2_hubei[i], alph2 = alpha2[i])
-#   rho_wbl_h[i] = Fh(x=Inf) - 0#F(x=0)
-#   
-# }
-#  
-#   median(rho_wbl)
-#   median(rho_wbl_h)
-
-
+rho
+median(rho)
+quantile(rho, probs = c(.025, .975))
+ plot((lambda1), type = "l")
 ```
 
-
-### Stan model for Lognormal
-
-Now, attempt to allow hazards to vary over time assuming times to death and recovery follow lognormal distributions
-```{stan, eval = FALSE, output.var="cfrmdl_ln"}
+Weibull model with random effect for lambda (shared alphas)
+```{stan, eval = FALSE, output.var="cfrmdl_wbl_r"}
 
 data {
   int <lower=0> T; //the number of time steps included
@@ -683,122 +647,148 @@ data {
   int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
   int <lower=0> d[T,L]; //  number of deaths reported on each day. 
   real <lower=0> c[T,L]; //number of new cases  on each day. 
-  int w[L]; //is this wuhan
-      int Nd; // number of indiviudal-level deaths
-  int Ntot; // number of individual-level deaths or recoveries
+ // int w[L]; //is this hubei province
+  int Nd; // number of indiviudal-level deaths
+  int Nr; // number of individual-level recoveries
   int wdi[Nd]; // indicator of living in hubei for individual deaths
-  int wrdi[Ntot]; // indicator of living in hubei for individual deaths or recoveries
-  real td[Nd]; // time to each individual deaths
-  real tall[Ntot]; //time to death or recovery (for all deaths+recoveries)
+  int wri[Nr]; // indicator of living in hubei for individual recoveries
+  int td[Nd]; // time to each individual deaths
+  int tr[Nr]; //time to each individual recoveries
 }
 
 parameters {
-  real logmu1; //parameter for time to death distribution
-  real logmuall; // parameter for time to death or recovery distribution
-  real delta1_hubei; //parameter for diff in hubei's lambda1
-  real delta_hubei; // parameter for diff in hubei's lambda2
-  real <lower=0> sigma1; //parameter for time to death distribution
-  real <lower=0> sigma; // parameter for time to death or recovery distribution
+  real loglambda1; //parameter for time to death distribution
+  real loglambda2; // parameter for time to death or recovery distribution
+  real loglambda1i[L]; //parameter for time to death distribution
+  real loglambda2i[L]; // parameter for time to death or recovery distribution
+ // real delta1_hubei; //parameter for diff in hubei's lambda1
+ // real delta2_hubei; // parameter for diff in hubei's lambda2
+  real  logalpha1; //parameter for time to death distribution (shared)
+  real  logalpha2; // parameter for time to death or recovery distribution (shared)
+  real<lower=0> tau1;
+  real<lower=0> tau2;
 }
 transformed parameters {
   real <lower=0> expected_deaths[T,L]; //  # deaths at time T
-  //real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
-   real <lower=0> expected_rds[T,L]; // deaths + recovereds
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
   matrix[V,T] expected_riskset; //expected risk set on each day of inf dur
   vector[V] h1;
- // vector[V] h2;
-  vector[V] hall;
-  real logmu1i[Nd]; // logmu1 for individual deaths
-  real logmu2i[Ntot]; // logmu2 for individual deaths
-  
-for (j in 1:L) {
-  // initialize expected_riskset to all 0s;
-    expected_riskset = rep_matrix(0.0, V, T);
-    h1 = rep_vector(0, V);
-    hall = rep_vector(0, V);
-    for(h in 1:V){ //pre-compute hazards at each time (do dno't have to do within each loop!)
-      h1[h] = (exp(normal_lpdf(log(h)|(logmu1+delta1_hubei*w[j]), sigma1))/h)/(1 - normal_cdf(log(h), (logmu1+delta1_hubei*w[j]), sigma1));
-       //h2[h] = (exp(normal_lpdf(log(h)|(logmu2+delta2_hubei), sigma2))/h)/(1 - normal_cdf(log(h), (logmu2+delta2_hubei), sigma2));
-      hall[h] = (exp(normal_lpdf(log(h)|(logmuall+delta_hubei*w[j]), sigma))/h)/(1 - normal_cdf(log(h), (logmuall+delta_hubei*w[j]), sigma));
-    }
+  vector[V] h2;
+  real <lower=0> alpha1; //parameter for time to death distribution
+ real <lower=0> alpha2; // parameter for time to death or recovery distribution
 
-    expected_riskset[1,1] = c[1,j]+0.0001; //risk set on day 1 at inf duration 1 is just c1
-    expected_deaths[1,j] = expected_riskset[1,1] * h1[1] + 0.0001 ;
-    //expected_recovereds[1,j] = expected_riskset[1,1] * h2[1] + 0.0001;
-     expected_rds[1,j] = expected_riskset[1,1] * hall[1] + 0.0001;
+  alpha1 = exp(logalpha1);
+  alpha2 = exp(logalpha2);
+
+for (j in 1:L) {
+  expected_riskset = rep_matrix(0.0, V, T);  // initialize expected_riskset to all 0s;
+  h1 = rep_vector(0, V);
+  h2 = rep_vector(0, V);
+  for(h in 1:V){ //pre-compute hazards at each time (do dno't have to do within each loop!)
+    h1[h] = alpha1*exp(loglambda1i[j])*h^(alpha1-1);
+    h2[h] = alpha2*exp(loglambda2i[j])*h^(alpha2-1);
+  } 
+
+    expected_riskset[1,1] = c[1,j]+0.001; //risk set on day 1 at inf duration 1 is just c1
+    expected_deaths[1,j] = expected_riskset[1,1] * h1[1]  ;
+    expected_recovereds[1,j] = expected_riskset[1,1] * h2[1] ;
  
 
     for (t in 2:T) {
-      expected_riskset[1,t] = c[t,j]+0.0001;
-      expected_deaths[t,j] = expected_riskset[1,t] *  h1[1] + 0.0001 ;
-      expected_rds[t,j] = expected_riskset[1,t] *  hall[1] + 0.0001;
+      expected_riskset[1,t] = c[t,j]+0.001;
+      expected_deaths[t,j] = expected_riskset[1,t] *  h1[1] ;
+      expected_recovereds[t,j] = expected_riskset[1,t] *  h2[1] ;
       
       for(k in 2:t){
       
-        expected_riskset[k,t] = (expected_riskset[k-1,t-1] - (expected_riskset[k-1,t-1]*hall[k-1]))+0.0001;
+        expected_riskset[k,t] = (expected_riskset[k-1,t-1] - (expected_riskset[k-1,t-1]*h1[k-1] +  (expected_riskset[k-1,t-1]* h2[k-1])));
         expected_deaths[t,j] +=  (expected_riskset[k,t] * h1[k]);
-        expected_rds[t,j] += (expected_riskset[k,t] * hall[k]);
+        expected_recovereds[t,j] += (expected_riskset[k,t] * h2[k]);
 
       }
     }
   }
- for (i in 1:Nd){
-  logmu1i[i] = logmu1+delta1_hubei*wdi[i];
+
 }
-  for (g in 1:Ntot){
-   logmu2i[g] = logmuall+delta_hubei*wrdi[g];
-  }
-}
-
-
-
 
 model {
   //definitely can be made more effcient.
-  for (j in 1:L) {
+  //aggregate data
+  
+  loglambda1i ~ normal(loglambda1, tau1);
+  loglambda2i ~ normal(loglambda2, tau2);
+  for (j in 1:L) { 
     for (t in 1:T) {
-      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]+d[t,j]|expected_rds[t,j]);
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) + poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
     }
   }
- for (i in 1:Nd){
-  target+=lognormal_lpdf(td[i]|logmu1i[i], sigma1);
- }
-  for (g in 1:Ntot){
-  target+=lognormal_lpdf(tall[g]|logmu2i[g], sigma);
- }
+  //individual data
+    for (g in 1:Nd) {
+      target+=log(alpha1*exp(loglambda1i[wdi[g]]) * td[g]^(alpha1-1) * exp(-( exp(loglambda1i[wdi[g]])*td[g]^alpha1+exp(loglambda2i[wdi[g]])*td[g]^alpha2) ));//log(h1(t)*S(t-))
+      }
+    for (h in 1:Nr){
+      target+=log(alpha2*exp(loglambda2i[wri[h]])*tr[h]^(alpha2-1)*exp(-(exp(loglambda1i[wri[h]])*tr[h]^alpha1+exp(loglambda2i[wri[h]])*tr[h]^alpha2)));
+    }
 }
 
 ```
 
-### Prep data for lognormal model
-
-```{r}
-cfr_moddata$Ntot <- cfr_moddata$Nr+cfr_moddata$Nd
-cfr_moddata$tall <- c(cfr_moddata$td, cfr_moddata$tr)
-cfr_moddata$wrdi <- c(cfr_moddata$wdi, cfr_moddata$wri)
-
-```
-### Run lognormal model
+### Run Weibull model
 
 ```{r, eval = FALSE}
-  cfrmdl_res_ln <- sampling(cfrmdl_ln, data=cfr_moddata,
-                         iter=2000, cores = detectCores(), control = list(adapt_delta = 0.8))
-  chains <- rstan::extract(cfrmdl_res_ln)
-  logmu1 <- (chains$logmu1)
-  logmuall <- (chains$logmuall)
-  lmu1_hubei <- (chains$logmu1 + chains$delta1_hubei)
-  lmu_hubei <- (chains$logmuall + chains$delta_hubei)
-  sigma1 <- chains$sigma1
-  sigma <- chains$sigma
-  # outdat_ln <- data.frame(logmu1 = logmu1, logmu2 = logmu2, lmu1_hubei = lmu1_hubei, lmu2_hubei = lmu2_hubei, scale1 = scale1, scale2 = scale2)
-  # 
-  # save(outdat_ln, file = "data/outdat_ln.RData")
+#cfr_moddata$dr <- cfr_moddata$d+cfr_moddata$r
+# initval <- function(){
+#   l1 <- .001
+#   l2 <- .05
+#   a1 <- 0.5
+#   a2 <- 0.5
+#     params <- list(loglambda1=log(l1), loglambda2=log(l2), logalpha1=log(a1), logalpha2 = log(a2), delta_death_hubei = 0, delta_recover_hubei=0)
+#     params
+#     #list(params, params, params, params)
+# }
+# 
+# initval() 
+initval <- function(){
+  loglambda1i <- rep(log(0.001), cfr_moddata$L)
+  loglambda2i <- rep(log(0.005), cfr_moddata$L)
+  logalpha1i <- rep(log(1), cfr_moddata$L)
+  logalpha2i <- rep(log(1), cfr_moddata$L)
+  tau1 <- 1
+  tau2 <- 1
+  sig1 <- 1
+  sig2 <- 1
+    params <- list(loglambda1i=loglambda1i, loglambda2i=loglambda2i, loglambda1 = loglambda1i[1], loglambda2 = loglambda2i[1], tau1 = tau1, tau2=tau2, logalpha1=0, logalpha2=0)#, sig1 = 1, sig2 = 1)
+    params
+}
+
+# initval <- function(){
+#   loglambda1i <- rep(-6, cfr_moddata$L)
+#   loglambda2i <- rep(log(0.05), cfr_moddata$L)
+#   tau1 <- 0.01
+#   tau2 <- 0.01
+#     params <- list(loglambda1i=loglambda1i, loglambda2i=loglambda2i, loglambda1 = loglambda1i[1], loglambda2 = loglambda2i[1], tau1 = tau1, tau2=tau2, logalpha1=0, logalpha2=0)
+#     params
+# }
+
+ cfrmdl_res_Wbl <- sampling(cfrmdl_wbl_r, data=cfr_moddata,
+                         iter=150, cores = 4, init=initval, verbose = FALSE)
+  chains <- rstan::extract(cfrmdl_res_Wbl)
+  lambda1 <- exp(chains$loglambda1)
+  lambda2 <- exp(chains$loglambda2)
+  lambda1i <- exp(chains$loglambda1i)
+  lambda2i <- exp(chains$loglambda2i)
+ #  lambda1_hubei <- exp(chains$loglambda1 + chains$delta1_hubei)
+ # lambda2_hubei <- exp(chains$loglambda2 + chains$delta2_hubei)
+
+  alpha1 <- chains$alpha1
+  alpha2 <- chains$alpha2
+
 ```
 
 ### Summarize Weibull model
 
 ```{r, echo = FALSE }
-# load("data/outdat_wbl_noh.RData")
+# load("data/outdat_wbl.RData")
 # 
 # lambda2 <- outdat_wbl[,2]
 # lambda1 <- outdat_wbl[,1] 
@@ -808,64 +798,293 @@ cfr_moddata$wrdi <- c(cfr_moddata$wdi, cfr_moddata$wri)
 # alpha2 <- outdat_wbl[,6]
 
 
-rho_ln <- matrix(nrow = length(logmu1))
-rho_ln_h <- matrix(nrow = length(logmu1))
-for(i in 1:length(lambda1)){
-  #outside hubei
-  F <- antiD( ( (dlnorm(x, meanlog = logmu1, sdlog = sigma1)/x)/(1 - plnorm(x, meanlog= logmu1, sdlog = sigma1)) * (1 - plnorm(x, logmuall, sigma)))~x, 
-              logmu1=logmu1[i], logmuall = logmuall[i], sigma1 - sigma1[i], sigma = sigma[i])
-  rho_ln[i] = F(x=Inf) - 0#F(x=0)
-  
-  # hubei
- Fh <- antiD( ( (dlnorm(x, meanlog = logmu1, sdlog = sigma1)/x)/(1 - plnorm(x, meanlog= logmu1, sdlog = sigma1)) * (1 - plnorm(x, logmuall, sigma)))~x, logmu1=lmu1_hubei[i], logmuall = lmu_hubei[i], sigma1 = sigma1[i], sigma = sigma[i])
-  rho_ln_h[i] = F(x=Inf) - 0#F(x=0)
-  
-}
- 
-  median(rho_ln)
-  median(rho_ln_h)
+rho <- matrix(nrow = length(lambda1))
 
-
-#first estimate rho outside hubei
-rho_wbl <- matrix(nrow = length(lambda1))
- h1x <- vector(length = length(lambda1))
- h2x <- vector(length = length(lambda1))
-# for(i in 1:length(lambda1)){
-#   try (
-#     rho_wbl[i] <- integrate(function(x) {
-#                                           h1x[i] <- alpha1[i]*lambda1[i]^alpha1[i]*x^(alpha1[i]-1)
-#                                           h2x[i] <- alpha2[i]*lambda2[i]^alpha2[i]*x^(alpha2[i]-1)
-#                                           risk.Inf <- h1x[i]*exp(-((h1x[i]+h2x[i])*x))
-#                                           return(risk.Inf)
-#     },
-#                         lower = 0, upper =Inf)$value)
-# }
- 
  for(i in 1:length(lambda1)){
   try (
-    rho_wbl[i] <- integrate(function(x) {   risk.Inf <- alpha1[i]*lambda1[i]^alpha1[i]*x^(alpha1[i]-1)*exp(-(( alpha1[i]*lambda1[i]^alpha1[i]*x^(alpha1[i]-1)+alpha2[i]*lambda2[i]^alpha2[i]*x^(alpha2[i]-1))*x))
+    rho[i] <- integrate(function(x) {   
+                                            risk.Inf <- alpha1[i]*lambda1[i]*x^(alpha1[i]-1)*exp(- ((lambda1[i]*x^(alpha1[i]) +lambda2[i]*x^(alpha2[i]))))
                                           return(risk.Inf)
     },
-                        lower = 0, upper =100)$value)
+                        lower = 0, upper =Inf)$value)
 }
 
-rho_wbl <- rho_wbl[!is.na(rho_wbl)]
-median(rho_wbl)
-quantile(rho_wbl, probs = c(.025, .975))
 
-#then estimate rho in hubei
-rho_wbl_hubei <- matrix(nrow = length(lambda1))
-for(i in 1:length(lambda1)){
+median(rho)
+quantile(rho, probs = c(.025, .975))
+
+
+#CFR by location
+
+selectedlocs <- vector(length = cfr_moddata$L)
+rhoi <- matrix(nrow=length(lambda1), ncol = length(selectedlocs))
+for(j in 1:cfr_moddata$L){
+  for(i in 1:length(lambda1i[,j])){
   try (
-    rho_wbl_hubei[i] <- integrate(function(x) {alpha1[i]*lambda1_hubei[i]^alpha1[i]*x^(alpha1[i]-1)*exp(-(alpha1[i]*lambda1_hubei[i]^alpha1[i]*x^(alpha1[i]-1)+alpha2[i]*lambda2_hubei[i]^alpha2[i]*x^(alpha2[i]-1))*x)},
-                        lower = 0, upper = Inf)$value)
+    rhoi[i,j] <- integrate(function(x) {   
+                                         risk.Inf <- alpha1[i]*lambda1i[i,j]*x^(alpha1[i]-1)*exp(- ((lambda1i[i,j]*x^(alpha1[i]) +lambda2i[i,j]*x^(alpha2[i]))))
+                                          return(risk.Inf)
+    },
+                        lower = 0, upper =Inf)$value)
+}
 }
 
-rho_wbl_hubei <- rho_wbl_hubei[!is.na(rho_wbl_hubei)]
-median(rho_wbl_hubei)
-# quantile(rho_wbl_hubei, probs = c(.025, .975))
- plot((alpha1), type = "l")#, ylim = c(0,.00000000001))
-  plot((logmu1), type = "l")#,  ylim = c(0,.00000000001))
-plot((rho_wbl), type = "l")
-# plot((lambda2), type = "l")#, ylim =c( 0, 100000))
+rhoj <- vector(length = cfr_moddata$L)
+for(j in 1:cfr_moddata$L){
+  rhoj[j] <- median(rhoi[,j])
+}
+names(rhoj) <- names(locs[-c(201)])
+
+rhoj
+
+
+ plot((lambda2), type = "l")
+
+
+```
+
+
+### Run compartmental model
+Define model
+```{stan, eval = FALSE, output.var="cfrmdl_erlang"}
+//Really not properly erlang...need to think about what this means...
+data {
+  int <lower=0> T; //the number of time steps included
+  int <lower=0> L; //the number of locations we have data from
+  int <lower=0> r[T,L]; //  number of recovered cases reported on each day.
+  int <lower=0> d[T,L]; //  number of deaths reported on each day. 
+  real <lower=0> c[T,L]; //number of new confirmed cases on each day. 
+  int w[L]; //is this wuhan
+  int N; //the numberof compartments.
+  int Nd; //the numberof deaths (individual)
+  int Nr; // number of individual recovs
+  int td[Nd];
+  int tr[Nr];
+ // matrix[Nd, 300] dt; // time to each individual deaths
+ // matrix[Nr, 300] dr; //time to each individual recoveries
+}
+
+parameters {
+  real <lower=0, upper=1> lambda1[N]; //death rate per compartment
+  real <lower=0, upper=1> lambda2[N]; //recovery rate per compartment
+  //real  logitlambda1[N]; //log death rate per compartment
+  //real  logitlambda2[N]; //log recovery rate per compartment
+  real <lower=0, upper=1> alpha; //rate of movement between compartments .
+  real delta_death_hubei; // wuhan detect rate
+  real delta_recover_hubei; // wuhan detect rate
+
+}
+
+transformed parameters {
+ // real <lower=0> lambda1[N]; //death rate per compartment
+ // real <lower=0> lambda2[N]; //recovery rate per compartment
+  real <lower=0> expected_deaths[T,L]; //  # deaths at time T
+  real <lower=0> expected_recovereds[T,L]; //  # those who have exited due to recovery at T
+  real <lower=0> expected_riskset[T,L,N]; // expected people in each compartment at eahc time.
+  real <lower=0> indiv_expected_risk [300,N]; //looking a very long way out where would we expect an individual to be
+  real <lower=0> indiv_expect_death [300]; //what is an indivduals probability of dying on exactly each day
+  real <lower=0> indiv_expect_recover [300]; //what is an individauls probability of recovering on each day
+  
+  //lambda1 = 1/(1+exp(-logitlambda1));
+  //lambda2 = 1/(1+exp(-logitlambda2));
+  
+//Fill in the probability of getting infected on each day 
+for (i in 1:N) {
+  indiv_expected_risk[1,i] = 0;
+}
+
+indiv_expected_risk[1,1] = 1;
+indiv_expect_death[1] = indiv_expected_risk[1,1]*lambda1[1];
+indiv_expect_recover[1] = indiv_expected_risk[1,1]*lambda2[1];
+
+for (t in 2:300) {
+  indiv_expected_risk[t,1] =  
+    indiv_expected_risk[t-1,1]  - 
+    indiv_expected_risk[t-1,1] * lambda1[1] -
+    indiv_expected_risk[t-1,1] * lambda2[1];
+  if (N>1) {
+    for (i in 2:N) {
+      indiv_expected_risk[t,i-1] -= 
+        alpha *indiv_expected_risk[t-1,i-1];
+      
+      indiv_expected_risk[t,i] =  
+        indiv_expected_risk[t-1,i] +
+        alpha *indiv_expected_risk[t-1,i-1] -
+        indiv_expected_risk[t-1,i] * lambda1[i] -
+        indiv_expected_risk[t-1,i] * lambda2[i];
+    }
+  }
+  
+  //Accumulate deaths and recovereds                      
+  indiv_expect_death[t] = indiv_expected_risk[t,1] * lambda1[1];
+  indiv_expect_recover[t] = indiv_expected_risk[t,1] * lambda2[1];
+  
+  if(N>1) {
+    for (i in 2:N) {
+      indiv_expect_death[t] += indiv_expected_risk[t,i] * lambda1[i];
+      indiv_expect_recover[t] += indiv_expected_risk[t,i] * lambda2[i];
+    }
+  }
+}
+
+
+  
+//Calculation the popualtion based probabilities. 
+for (j in 1:L) {
+    //initialize the 
+    expected_riskset[1,j,1] = c[1,j]+0.001;
+    expected_deaths[1,j] = expected_riskset[1,j,1] *
+          lambda1[1] * exp(delta_death_hubei *w[j]) + 0.0001 ;
+    expected_recovereds[1,j] = expected_riskset[1,j,1] *
+        lambda2[1] * exp(delta_recover_hubei * w[j]) + 0.0001;
+    
+    //Initialize the riskset i ther compartments to 0 if they exist.
+    if(N>1) {
+      for (i in 2:N) {
+        expected_riskset[1,j,i] = 0;
+      }
+    }
+ 
+    for (t in 2:T) {
+       //Move deaths and recoveries from last timestep out of first compartment.
+       expected_riskset[t,j,1] =  expected_riskset[t-1,j,1] + c[t,j] - 
+                                  expected_riskset[t-1,j,1] * lambda1[1] * exp(delta_death_hubei *w[j]) - 
+                                  expected_riskset[t-1,j,1] * lambda2[1] * exp(delta_recover_hubei * w[j]);
+                                
+      if(N>1) {
+        for (i in 2:N) {
+          //remove the alpha from the expected risk set i-1
+          expected_riskset[t,j,i-1] -= alpha *expected_riskset[t-1,j,i-1];
+          
+          expected_riskset[t,j,i] =  expected_riskset[t-1,j,i] +
+                                     alpha *expected_riskset[t-1,j,i-1] -
+                                     expected_riskset[t-1,j,i] * lambda1[i] * exp(delta_death_hubei *w[j])-
+                                     expected_riskset[t-1,j,i] * lambda2[i] * exp(delta_recover_hubei * w[j]);
+        }
+      }                            
+      
+      //Accumulate deaths and recovereds                      
+      expected_deaths[t,j] = expected_riskset[t,j,1] * lambda1[1] * exp(delta_death_hubei *w[j]) + 0.0001 ;
+      expected_recovereds[t,j] = expected_riskset[t,j,1] * 
+              lambda2[1] * exp(delta_recover_hubei * w[j])  + 0.0001;
+              
+      if(N>1) {
+        for (i in 2:N) {
+          expected_deaths[t,j] += expected_riskset[t,j,i] * lambda1[i] * exp(delta_death_hubei *w[j]);
+          expected_recovereds[t,j] += expected_riskset[t,j,i] * 
+                lambda2[i] * exp(delta_recover_hubei * w[j]);
+        }
+      }
+      
+    }
+  }
+}
+
+
+model {
+
+  delta_death_hubei ~ normal(0,.5); //somewhat stron prior around 0
+  delta_recover_hubei ~ normal(0,.5); //somewhat stron prior around 0
+  //definitely can be made more effcient.
+  for (j in 1:L) {
+    for (t in 1:T) {
+      target+=poisson_lpmf(d[t,j]|expected_deaths[t,j]) +
+            poisson_lpmf(r[t,j]|expected_recovereds[t,j]);
+    }
+  }
+
+    for (g in 1:Nd) {
+      target+=log(indiv_expect_death[td[g]]);
+      }
+    for (h in 1:Nr){
+      target+= log(indiv_expect_recover[tr[h]]);
+    }
+  
+ 
+}
+
+```
+
+Run compartmental model
+```{r, eval=FALSE}
+initval <- function(){
+  l1 <- c(.01, .01, .01)
+  l2 <- c(.05, .05, .05)
+  al <- 0.5
+    params <- list(lambda1=l1, lambda2=l2, alpha=al, delta_death_hubei = 0, delta_recover_hubei=0)
+    params
+    #list(params, params, params, params)
+}
+
+initval()
+  cfrmdl_erlang_data <- cfr_moddata
+  cfrmdl_erlang_data$N <- 3 #Set the number of compartments
+  cfrmdl_erlang_res <- sampling(cfrmdl_erlang, data=cfrmdl_erlang_data, 
+                         iter=200,  init = initval, cores = detectCores()) #
+  
+  
+
+```
+
+Get CFR
+```{r}
+##Translate this into estimates of the CFR, rho
+N <- cfrmdl_erlang_data$N
+
+##' Param 1 is alpha.
+##' Param 2:(N+1) are lambda 1s
+##' State N+1 is dead, state N+2 is recovered
+dx.dt <- function (t, state, param) {
+  rc <- vector(length=N+2)
+  rc[N+1] <- 0
+  rc[N+2] <- 0
+  
+  for (i in 1:N) {
+    ##add from last state if not 1
+     rc[i] <- ifelse(i>1, state[i-1]*param[1], 0) 
+     ## Take out deaths and recoverds
+     rc[i] <- rc[i] - (param[i+1] + param[N+i+1])*state[i]
+     ##Move to next state if not N
+     if (i<N) {rc[i] <- rc[i]-param[1]*state[i]}
+     ##Decrement deaths and revoverds
+     rc[N+1] <- rc[N+1] + param[i+1]*state[i]
+     rc[N+2] <- rc[N+2] + param[N+i+1]*state[i]
+  }
+  
+  return(list(rc))
+}
+
+
+require(deSolve)
+
+solve_deaths <- function(alpha, lambda1s, lambda2s) {
+  res <- ode(c(1, rep(0, N+1)), #initial state for N compartments plus death/recovery
+             c(1,1000), #just need intial values and at T large
+             dx.dt, #function
+             c(alpha, lambda1s, lambda2s)
+           )
+
+  return(res[2,N+2]) #should be deaths
+}
+
+chains <- extract(cfrmdl_erlang_res)
+rho_erlang <- vector(length=length(chains$alpha))
+rho_erlang_hubei <- vector(length=length(chains$alpha))
+i <- 1
+lambda1 <- as.matrix(chains$lambda1)
+lambda2 <- as.matrix(chains$lambda2)
+for(i in 1:length(chains$alpha)){
+  rho_erlang[i] <- solve_deaths(chains$alpha[i], lambda1[i,], lambda2[i,])
+  
+  rho_erlang_hubei[i] <- solve_deaths(chains$alpha[i], 
+                                      lambda1[i,]*exp(chains$delta_death_hubei[i]), 
+                                      lambda2[i,]*exp(chains$delta_recover_hubei[i]))
+}
+
+
+median(rho_erlang)
+quantile(rho_erlang, probs = c(.025, .975))
+
+median(rho_erlang_hubei)
+quantile(rho_erlang_hubei, probs = c(.025, .975))
 ```
