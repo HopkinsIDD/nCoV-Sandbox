@@ -18,11 +18,12 @@ require(readr)
 require(parallel)
 require(mosaicCalc)
 require(lubridate)
+library(deSolve)
 
 source("../R/DataLoadUtils.r")
 source("../R/BasicEpiAnalyses.r")
 source("../R/CFRutils.r")
-source("../R/mle_utils.R")
+source("../R/mle_utils_r.R")
 
 ```
 
@@ -72,7 +73,7 @@ Prepare aggregate data on total cases, deaths, and recoveries by calendar date t
 library(readr)
 library(tidyverse)
 #Load in the JHU CSSE Data
-todaydate <- ISOdate(2020,4,9, hour = 11, min = 59, tz = "UTC")
+todaydate <- ISOdate(2020,4,30, hour = 11, min = 59, tz = "UTC")
 cfr_moddata_all <- moddata_country(todaydate)
 cfr_moddata <-cfr_moddata_all[[1]]
 locs <- cfr_moddata_all[[2]] #get lookup table
@@ -89,7 +90,8 @@ IndDat <- IndDat %>%
             mutate(country=replace(country, country=="United Kingdom", "UK")) %>%
             mutate(country=replace(country, country=="China", "Mainland China")) %>%
             mutate(country2 = ifelse((province == "Hubei" & !is.na(province)) | is.na(country), province, country)) %>% 
-            mutate(loc = locs[country2])
+            mutate(loc = locs[country2]) %>% 
+            mutate(w = ifelse(country == "US", 1, 0))
           
 
 deaths <- IndDat %>% filter(delta == 1 & !is.na(t) & t>1) %>% select(t, country2, loc)
@@ -106,6 +108,9 @@ cfr_moddata$wdi <- wdi
 cfr_moddata$wri <- wri
 cfr_moddata$Nd <- length(td)
 cfr_moddata$Nr <- length(tr)
+
+
+naive <- sum(cfr_moddata$d)/sum(cfr_moddata$d+cfr_moddata$r)
 
 #make some plots to double check that data looks ok
 #confirmed
@@ -145,6 +150,98 @@ ggplot(test, aes(x=x, y=ys, colour = loc, group=loc))+
 
 ```
 
+## First, fit maximum likelihood estimators
+
+First run exponential model with maximum likelihood (with aggregate + individual data)
+```{r}
+
+test <- cfrbounds(cfr_moddata)
+test
+#starting values
+b <- c(log(0.001), log(0.01), 0)
+exp.mdl <- optim(b, LLexp.ind, data = cfr_moddata, recovrate = "estimate")
+exp(exp.mdl$par)
+lambda1 <- exp(exp.mdl$par)[1]
+lambda2 <- exp(exp.mdl$par)[2]
+dr <- expit(exp.mdl$par)[3]
+ rho <- integrate(function(x) {   
+                                          risk.Inf <- lambda1*exp(- ((lambda1*x +lambda2*x)))
+                                          return(risk.Inf)
+    },
+                        lower = 0, upper =Inf)$value
+rho
+
+```
+
+
+Then, run weibull model model with maximum likelihood (with aggregate + individual data)
+```{r}
+#starting values
+b <- c(log(0.001), log(0.01), 0, 0, 0)
+wbl.mdl <- optim(b, LLwbl.ind, data = cfr_moddata, recovrate = "estimate")
+exp(wbl.mdl$par)
+lambda1 <- exp(wbl.mdl$par)[1]
+lambda2 <- exp(wbl.mdl$par)[2]
+alpha1 <- exp(wbl.mdl$par)[3]
+alpha2 <- exp(wbl.mdl$par)[4]
+dr <- expit(wbl.mdl$par)[5]
+  rho <- integrate(function(x) risk.Inf <- alpha1*lambda1*x^(alpha1-1) * 
+                     exp((-(lambda1*x^(alpha1) +lambda2*x^(alpha2)))),
+                   lower = 0, upper =Inf)$value
+rho
+
+```
+
+Compartmental model with maximum likelihood
+```{r}
+ # some nested functions 
+  dx.dt <- function (t, state, param, N=3) {
+    rc <- vector(length=N+2)
+    rc[N+1] <- 0
+    rc[N+2] <- 0
+    
+    for (i in 1:N) {
+      ##add from last state if not 1
+      rc[i] <- ifelse(i>1, state[i-1]*param[1], 0) 
+      ## Take out deaths and recoverds
+      rc[i] <- rc[i] - (param[i+1] + param[N+i+1])*state[i]
+      ##Move to next state if not N
+      if (i<N) {rc[i] <- rc[i]-param[1]*state[i]}
+      ##Decrement deaths and revoverds
+      rc[N+1] <- rc[N+1] + param[i+1]*state[i]
+      rc[N+2] <- rc[N+2] + param[N+i+1]*state[i]
+    }
+    
+    return(list(rc))
+  }
+  
+  solve_deaths <- function(alpha, lambda1s, lambda2s, N) {
+    res <- ode(c(1, rep(0, N+1)), #initial state for N compartments plus death/recovery
+               c(1,1000), #just need intial values and at T large
+               dx.dt, #function
+               c(alpha, lambda1s, lambda2s)
+    )
+    
+    return(res[2,N+2]) #should be deaths
+  }
+  
+  # Checking whether include_individual_data and deciding LL formula
+  compartments <- 3
+init_params=c(log(0.01), log(0.01), log(0.05), 0)
+  init_params_c <- c(rep(init_params[1], compartments), rep(init_params[2], compartments), init_params[3], init_params[4])
+  
+  est_param <- optim(init_params_c, LLerlang.ind, data=cfr_moddata, compartments = compartments, hessian=F, recovrate="estimate")
+  # est_lambda_ci <- sqrt(diag(solve(est_param$hessian)))  # might need this later for CFR 95% CL
+  
+  lambda1 <- exp(est_param$par[1:compartments])
+  lambda2 <- exp(est_param$par[(compartments+1):(2*compartments)])
+  alpha <- exp(est_param$par[compartments*2+1])
+  dr <- expit(est_param$par[compartments*2+2])
+  ##Translate this into estimates of the CFR, rho
+  rho <- solve_deaths(alpha, lambda1, lambda2, N=compartments)
+  
+  rho
+```
 
 
 ## Assuming constant hazards of death and recovery
