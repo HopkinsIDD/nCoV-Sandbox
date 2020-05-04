@@ -92,7 +92,8 @@ calcRhoC <- function(p, C1_H_C, C1_H_H){
 run_tracing_sim <- function(nsims=1, I0, p){
   
   # Decide whether delays to isolation among household contacts are indexed from symptom onset or infection
-  if(p[['ind_onset']]){delayFuncHH <- pullDelayOnset}else{delayFuncHH <- function(delay_par, inc_par = p[['inc_par']], n){return(pullDelayInfection(delay_par, inc_par, n))}}
+  if(p[['ind_onset_H']]){delayFuncHH <- pullDelayOnset}else{delayFuncHH <- function(delay_par, inc_par = p[['inc_par']], n){return(pullDelayInfection(delay_par, inc_par, n))}}
+  if(p[['ind_onset_C']]){delayFuncC <- pullDelayOnset}else{delayFuncC <- function(delay_par, inc_par = p[['inc_par']], n){return(pullDelayInfection(delay_par, inc_par, n))}}
   
   I0_vec <- rep(I0, nsims)
 
@@ -151,7 +152,7 @@ run_tracing_sim <- function(nsims=1, I0, p){
       
           # [I2] infections from non HH I1 traced - [I0*rho1*gammaP*R0*(1-alphaH)] * rhoC * gammaC*R0
           # to decide if overdispersion remains the same with scaled R0
-          I1_C_T_delay <- lapply(I1_C_T, function(x){pullDelayOnset(delay_par = p[['delay_parC']], n=x)})
+          I1_C_T_delay <- lapply(I1_C_T, function(x){delayFuncC(delay_par = p[['delay_parC']], n=x)})
           I1_C_T_gamma <- lapply(I1_C_T_delay, function(x){calcInfProp(x, p[['inf_par']])})
           I2_C_traced <- sapply(1:length(I1_C_T), function(x) sum(rnbinom(I1_C_T[x], mu=I1_C_T_gamma[[x]]*p[['R0']], size=p[['theta']])))
           
@@ -214,15 +215,22 @@ calcRe_sim <- function(gen1, gen2){
 calcRe_exact <- function(p){
   
   # calculate average delays
-  if(p[['ind_onset']]){
+  if(p[['ind_onset_H']]){
     delayH = exp(p[['delay_parH']][1] + p[['delay_parH']][2]^2/2)
   }else{
     delayH = exp(p[['delay_parH']][1] + p[['delay_parH']][2]^2/2) - exp(p[['inc_par']][1] + p[['inc_par']][2]^2/2)
+    #delayH = exp(p[['delay_parH']][1]) - exp(p[['inc_par']][1])
+  }
+  
+  if(p[['ind_onset_C']]){
+    delayC = exp(p[['delay_parC']][1] + p[['delay_parC']][2]^2/2)
+  }else{
+    delayC = exp(p[['delay_parC']][1] + p[['delay_parC']][2]^2/2) - exp(p[['inc_par']][1] + p[['inc_par']][2]^2/2)
+    #delayC = exp(p[['delay_parC']][1]) - exp(p[['inc_par']][1])
   }
   
   delayP = exp(p[['delay_parP']][1] + p[['delay_parP']][2]^2/2)
-  delayC = exp(p[['delay_parC']][1] + p[['delay_parC']][2]^2/2)
-  
+
   # calculate average infection proportions
   gammaP = calcInfProp(delayP, p[['inf_par']])
   gammaH = calcInfProp(delayH, p[['inf_par']])
