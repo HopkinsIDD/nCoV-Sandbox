@@ -215,8 +215,12 @@ est_daily_incidence_country <- function (cum_data,
   ##perturbations in reporting than taking raw difference).
   ##Making sure only to infer over trhe suport
   tmp_dt_seq <- seq(first_date, last_date, "days")
-  incidence_data<- analyze %>% nest(-c(Country_Region, Province_State)) %>%
-    mutate(cs=purrr::map(data, ~fit_ispline(dates=.$Update, obs=.$Confirmed))) %>%
+  incidence_data<- analyze %>% 
+    group_by(Country_Region, Update) %>% 
+    summarize(cumcases = sum(Confirmed)) %>% 
+    ungroup(Country_Region, Update) %>% 
+    nest(-c(Country_Region)) %>%
+    mutate(cs=purrr::map(data, ~fit_ispline(dates=.$Update, obs=.$cumcases))) %>%
     mutate(Incidence=purrr::map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
                                                       Incidence= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)]))))))) %>%
     unnest(Incidence) %>% dplyr::select(-data) %>% dplyr::select(-cs)
@@ -304,8 +308,12 @@ est_daily_deaths_country <- function (cum_data,
   ##perturbations in reporting than taking raw difference).
   ##Making sure only to infer over trhe suport
   tmp_dt_seq <- seq(first_date, last_date, "days")
-  death_data<- analyze %>% nest(-c(Country_Region, Province_State)) %>%
-    mutate(cs=purrr::map(data, ~fit_ispline(dates=.$Update, obs=.$Deaths))) %>%
+  death_data<- analyze %>% 
+    group_by(Country_Region, Update) %>% 
+    summarize(cumdeaths = sum(Deaths)) %>% 
+    ungroup(Country_Region, Update) %>% 
+    nest(-c(Country_Region)) %>%
+    mutate(cs=purrr::map(data, ~fit_ispline(dates=.$Update, obs=.$cumdeaths))) %>%
     mutate(Deaths=purrr::map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
                                                    Deaths= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)]))))))) %>%
     unnest(Deaths) %>% dplyr::select(-data) %>% dplyr::select(-cs)
@@ -380,8 +388,12 @@ est_daily_recovered_country <- function (cum_data,
   ##perturbations in reporting than taking raw difference).
   ##Making sure only to infer over trhe suport
   tmp_dt_seq <- seq(first_date, last_date, "days")
-  recovered_data<- analyze %>% nest(-c(Country_Region, Province_State)) %>%
-    mutate(cs=purrr::map(data, ~ fit_ispline(dates=.$Update, obs=.$Recovered))) %>%
+  recovered_data<- analyze %>% 
+    group_by(Country_Region, Update) %>% 
+    summarize(cumrecovs = sum(Recovered)) %>% 
+    ungroup(Country_Region, Update) %>% 
+    nest(-c(Country_Region)) %>%
+    mutate(cs=purrr::map(data, ~ fit_ispline(dates=.$Update, obs=.$cumrecovs))) %>%
     mutate(Recovered=purrr::map2(cs,data, ~data.frame(Date=tmp_dt_seq[tmp_dt_seq>=min(.y$Update) & tmp_dt_seq<=max(.y$Update)],
                                                       Recovered= diff(c(0, pmax(0,.x(tmp_dt_seq[tmp_dt_seq>=min(.y$Update)& tmp_dt_seq<=max(.y$Update)]))))))) %>%
     unnest(Recovered) %>% dplyr::select(-data) %>% dplyr::select(-cs)
