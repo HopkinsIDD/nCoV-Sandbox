@@ -132,22 +132,39 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
 
   for (file in file_list) {
     print(file)
-    tmp <- read_csv(file)%>%
-      rename(Province_State=`Province/State`)%>%
-      rename(Update = `Last Update`) %>%
-      mutate(Update=lubridate::parse_date_time(Update, 
-          c("%m/%d/%Y %I:%M %p", "%m/%d/%Y %H:%M", "%m/%d/%y %I:%M %p","%m/%d/%y %H:%M", "%Y-%m-%d %H:%M:%S")))
+    tmp <- read_csv(file)
+     # rename(Update = `Last Update`) %>%
+     # mutate(Update=lubridate::parse_date_time(Update, 
+        #  c("%m/%d/%Y %I:%M %p", "%m/%d/%Y %H:%M", "%m/%d/%y %I:%M %p","%m/%d/%y %H:%M", "%Y-%m-%d %H:%M:%S")))
     
     if("Country"%in%colnames(tmp)) {
       tmp <- rename(tmp, Country_Region=Country)
-    } else {
+    } 
+    if("Country/Region"%in%colnames(tmp)) {
       tmp <- rename(tmp, Country_Region=`Country/Region`)
     }
+    if("Last_Update"%in%colnames(tmp)) {
+      tmp <- rename(tmp, Update = `Last_Update`)
+    } else {
+      tmp <- rename(tmp, Update = `Last Update`)
+    }
+    
+    tmp <-  mutate(tmp, Update=lubridate::parse_date_time(Update, 
+                                                     c("%m/%d/%Y %I:%M %p", "%m/%d/%Y %H:%M", "%m/%d/%y %I:%M %p","%m/%d/%y %H:%M", "%Y-%m-%d %H:%M:%S")))
+    if("Province/State"%in%colnames(tmp)) {
+      tmp <- rename(tmp, Province_State=`Province/State`)
+    } 
     
     if ("Demised"%in% colnames(tmp)) {
       tmp <- rename(tmp, Deaths=Demised)
     }
 
+    #mp <- select(tmp, c("Province_State", "Country_Region", "Update", "Confirmed", "Deaths", "Recovered"))
+    if ("FIPS"%in% colnames(tmp)) {
+      tmp <- select(tmp, -c("FIPS"))
+    }
+    
+    
     rc <-bind_rows(rc,tmp)
   }
   
@@ -286,9 +303,35 @@ process_MK_linelist <- function(data, date) {
     # mutate(delta = ifelse(`dead(0)/alive(1)` == 1 |outcome == "discharged", 2, 1)) %>% 
     mutate(delta = ifelse(outcome == "discharged", 2, ifelse(outcome == "died", 1, 0))) %>% 
     #mutate(delta = ifelse(outcome == "died", 1, delta)) %>% 
-   # mutate(delta = ifelse(is.na(delta), 0, delta)) %>% 
-    select(ID, age, sex, province, date_confirmation, start_date, end_date, t, outcome, date_death_or_discharge, date_onset_symptoms, delta)
+    mutate(delta = ifelse(is.na(delta), 0, delta)) %>% 
+    select(ID, age, sex, province, country, date_confirmation, start_date, end_date, t, outcome, date_death_or_discharge, date_onset_symptoms, delta)
   
   return(tmp)
   
 }
+
+##' Function to read and process the data used in the Verity Lancet paper, downloaded from https://github.com/mrc-ide/COVID19_CFR_submission
+##' no params
+##' @return dataframe with individual level data
+##' 
+##' 
+##' 
+
+
+read.verity.data <- function(){
+  data <- read.csv("data/Verity_exportedcases.csv") 
+  date_format <- "%Y-%m-%d"
+  data <-  mutate(data, origin = as.Date(as.character(data$date_confirmed_dd_mm_yyyy), date_format)) %>% 
+    mutate(origin=ifelse(is.na(origin),as.Date(as.character(data$date_hospitalized_dd_mm_yyyy), date_format), origin)) %>% 
+    mutate(origin=ifelse(is.na(origin), as.Date(as.character(data$date_onset_symptoms_dd_mm_yyyy), date_format), origin)) %>% 
+    mutate(deathdt = as.Date(as.character(data$date_death_dd_mm_yyyy), date_format)) %>% 
+    mutate(recovdt = as.Date(as.character(data$date_recovered_dd_mm_yyyy), date_format)) %>% 
+    mutate(t = ifelse(!is.na(deathdt),(deathdt - origin),(recovdt - origin)))%>% 
+    mutate(t = ifelse(t<=0 & !is.na(t), 1, t)) %>% #limit to positive times
+    mutate(delta = ifelse(outcome == "recovery", 2, ifelse(outcome == "death", 1, 0))) %>% 
+    filter(delta>0 & !is.na(t)) %>% #limit to deaths or recoveries with nonmissing times
+    select(country, t, delta, origin)
+
+  return(data)
+}
+
