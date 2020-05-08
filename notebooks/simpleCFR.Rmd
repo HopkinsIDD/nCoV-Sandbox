@@ -73,15 +73,15 @@ Prepare aggregate data on total cases, deaths, and recoveries by calendar date t
 library(readr)
 library(tidyverse)
 #Load in the JHU CSSE Data
-todaydate <- ISOdate(2020,4,30, hour = 11, min = 59, tz = "UTC")
+todaydate <- ISOdate(2020,5,7, hour = 11, min = 59, tz = "UTC")
 cfr_moddata_all <- moddata_country(todaydate)
 cfr_moddata <-cfr_moddata_all[[1]]
 locs <- cfr_moddata_all[[2]] #get lookup table
 
 #prepare individual-level data
-date <-ymd("20200305")
+date <-ymd("2020-03-05")
 IndDat <- read_MK_linelist("3-5-2020")
-IndDat <- process_MK_linelist(IndDat, ymd(date))
+IndDat <- process_MK_linelist(IndDat, date)
 
 
 IndDat <- IndDat %>% 
@@ -92,10 +92,20 @@ IndDat <- IndDat %>%
             mutate(country2 = ifelse((province == "Hubei" & !is.na(province)) | is.na(country), province, country)) %>% 
             mutate(loc = locs[country2]) %>% 
             mutate(w = ifelse(country == "US", 1, 0))
-          
 
-deaths <- IndDat %>% filter(delta == 1 & !is.na(t) & t>1) %>% select(t, country2, loc)
-recovs <-   IndDat %>% filter(delta == 2& !is.na(t)& t>1) %>% select(t, country2, loc)
+IndDat2 <- read.verity.data()  
+IndDat2 <- IndDat2 %>% 
+  mutate(country2=recode(country, "USA"="US")) %>%
+  mutate(loc = locs[as.character(country2)]) %>% 
+  select(t, country2, loc, delta)
+
+deaths1 <- IndDat %>% filter(delta == 1 & !is.na(t) & t>=1) %>% select(t, country2, loc)
+recovs1 <-   IndDat %>% filter(delta == 2& !is.na(t)& t>=1) %>% select(t, country2, loc)
+deaths2 <- IndDat2 %>% filter(delta == 1 & !is.na(t) & t>=1) %>% select(t, country2, loc)
+recovs2 <-   IndDat2 %>% filter(delta == 2& !is.na(t)& t>=1) %>% select(t, country2, loc)
+
+deaths <- rbind(deaths1, deaths2)
+recovs <- rbind(recovs1, recovs2)
 
 td <- deaths$t
 wdi <- deaths$loc
@@ -111,6 +121,38 @@ cfr_moddata$Nr <- length(tr)
 
 
 naive <- sum(cfr_moddata$d)/sum(cfr_moddata$d+cfr_moddata$r)
+
+
+# function to estimate logical bounds on CFR over time
+# output num censored, lower and upper bounds
+cfrbounds.tv <- function(data){
+  dat <- data
+ # results <- matrix(ncol = 3, nrow = nrow(dat$c))
+  c <- cumsum(rowSums(dat$c))
+  d <- cumsum(rowSums(dat$d))
+  r <- cumsum(rowSums(dat$r))
+  censored <- c - (d+r)
+  lower <- d/c # assume all censored are not deaths
+  upper <- (d + censored)/c # assume all censored are deaths later that day
+  bounds <- cbind(lower, upper)
+  results <- cbind(censored, bounds)
+  return(results)
+}
+
+
+days <- c(1:nrow(cfr_moddata$c))
+bounds <- cfrbounds.tv(cfr_moddata)
+bounds
+
+#losing like a million cases. remove smoothing? 
+
+plot(days, bounds[,2], type = "l", ylim = c(0,1))
+lines(days, bounds[,3], col = "blue")
+
+
+dat <- cfr_moddata
+
+cumsum(rowSums(cfr_moddata$c))
 
 #make some plots to double check that data looks ok
 #confirmed
@@ -146,7 +188,7 @@ test <- data.frame(x= rep(c(1:cfr_moddata$T), ncol(cfr_moddata$r)), loc = rep(1:
 
 ggplot(test, aes(x=x, y=ys, colour = loc, group=loc))+
   geom_line()
-
+ch <- incidence_data %>% filter(Incidence>30000)
 
 ```
 
@@ -155,8 +197,8 @@ ggplot(test, aes(x=x, y=ys, colour = loc, group=loc))+
 First run exponential model with maximum likelihood (with aggregate + individual data)
 ```{r}
 
-test <- cfrbounds(cfr_moddata)
-test
+# test <- cfrbounds(cfr_moddata[nrow(cfr_moddata$c),])
+# test
 #starting values
 b <- c(log(0.001), log(0.01), 0)
 exp.mdl <- optim(b, LLexp.ind, data = cfr_moddata, recovrate = "estimate")
