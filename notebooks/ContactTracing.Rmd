@@ -6,35 +6,32 @@ output: html_document
 
 Updated `r Sys.Date()`
 
+Prepared by: Kyra Grantz, Elizabeth Lee, C. Jessica Metcalf, Justin Lessler
+
 ```{r setup, include=FALSE}
-  knitr::opts_chunk$set(echo = FALSE, fig.align="center")
+  knitr::opts_chunk$set(echo = FALSE, fig.align=                                                                                                                                                                                                                                                                                                                                                                                "center")
   library(tidyverse)
   library(gridExtra)
+  library(flextable)
 
   source("../R/ContactTracing.R")
 
 ```
 
+```{r common_params}
 
-### Data Sources
+  inf_dist_short <- c(2.1157790, 0.6898583, 2.3066912)
+  inf_dist_long <- c(4, 0.6898583, 2.3066912)
 
-#### Natural history
+  inc_dist <- c(1.621, 0.418)
 
-[Incubation period:](https://annals.org/aim/fullarticle/2762808/incubation-period-coronavirus-disease-2019-covid-19-from-publicly-reported) 5.1d (log-mean 1.621, log-SD 0.418).
+  delay_Shzn_symptom <- c(1.22, 0.78)
+  delay_Shzn_contact <- c(0.77, 0.67)
+  
+```
 
-[Distribution of Infectiousness](https://www.nature.com/articles/s41591-020-0869-5/figures/1): relative infectiousness from time of symptom onset follows a gamma distribution with shape 2.12, rate 0.69, amd offest 2.31.
+This report reviews the likely impacts of several test-trace-isolate strategies, independently of other interventions that may be used in conjunction with test-trace-isolate. These strategies are likely to be a critical component of COVID19 response plans as stay-at-home and other mass social distancing measures are lifted. Here, we use a simple mathematic model of COVID19 transmission to assess the potential reductions in community transmission under various test-trace-isolate strategies and values of key parameters
 
-This is consistent with other analyses that find a median serial interval of [4.0 days](https://wwwnc.cdc.gov/eid/article/26/6/20-0357_article), [4.6 days](https://www.sciencedirect.com/science/article/pii/S1201971220301193), [5.1 days](https://www.thelancet.com/journals/laninf/article/PIIS1473-3099(20)30230-9/fulltext),  
-
-#### Contact Data
-
-[The POLYMOD study](https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.0050074) estimates an average of 13.4 contacts per participant per day, including children, though there is variance across countries (e.g., mean 8 in Germany, mean 19.8 in Italy). There was some skew to the data, which also varied by country. Between 20 - 30% of contacts were made in the household.
-
-A [survey in the UK](https://www.medrxiv.org/content/10.1101/2020.03.31.20049023v1?%253fcollection=) found that, from 24 - 26 March 2020, adults reported 3 (IQR 1, 4) physical and non-physical contacts, and that 57.6% of contacts occurred at home.
-
-A [survey in California, New York, Arizona, and Massachusetts, USA](https://www.medrxiv.org/content/10.1101/2020.04.13.20064014v1) found that, from 22 March - 8 April 2020, adults reported an average of 2.7 contacts (median 2) conversational contacts, using the same definition as the POLYMOD study. There were few contacts (mean ~1) outside of the household; 50% of respondents had no contacts outside of the household, and the vast majority that did have contact outside the household reported only 1 or 2 contacts.
-
-Preliminary data from contact tracing efforts in Maryland during the stay-at-home order have indicated that roughly half of adults report no contacts, and those that do report contacts almost always report fewer than 4 contacts. Up to 25% of cases cannot be reached once test results are available.
 
 ### Scenarios
 
@@ -44,15 +41,51 @@ We list a table below of the key scenarios modeled below.
 |---:|:--------------------------------------------:|:------------------------------------------------------------:|
 | 1  | Traditional, test-based contact isolation    | Passive surveillance isolation on average 4.6d after symptom onset; contact tracing isolation on average 2.7d after symptom onset |
 | 2  | Rapid, test-based contact isolation          | Scenario 1, but individuals are isolated on average 2 days faster |
-| 3  | Household quarantine upon index confirmation | Scenario 1, but all household contacts are quarntined on day of test confirmation/isolation of index case |
+| 3  | Household quarantine upon index confirmation | Scenario 1, but all household contacts are quarantined on day of test confirmation/isolation of index case |
 | 4  | Household quarantine upon index detection    | Index cases and household contacts are quarantined on day of index case symptom onset |
 
+We present below the estimated values of $R_e$, or the effective reproductive number, under these scenarios and while varying other key parameters. We note three critical definitions:
 
+- $R_e(I_0)$: the expected number of secondary cases among all individuals in $I_0$, the current infections which may or may not be passively detected and serve as seeds for contact tracing. 
+
+- $R_e(I_1)$: the expected number of secondary cases among all individuals in $I_1$, who are the infected contacts of $I_0$ whether $I_0$ was passively detected or not.
+
+- $R_e(I_{1,p})$: the expected number of secondary cases among all individuals in $I_{1,p}$, who are the infected contacts of the individuals in $I_0$ who were were passively detected and serve as seeds for contact tracing efforts. Therefore, this reflects onward transmission only among those infected contacts that could be enumerated and will change as isolation strategies change. This value does *not* reflect the continued onward transmission by undetected individuals in $I_0$ and their contacts.
+
+ ----------------------
+
+### Key Points
+
+The estimates from this modeling suggest that several strategies could help significantly reduce the impact of COVID-19, and several key policy recommendations follow from these findings. 
+ 
+**1. Widely used testing on demand is critical to an effective test and isolate program.** Test-trace-isolate strategies rely on the identification of ‘seeds’, whose contacts can be enumerated and then quarantined. We find approximately linear decreases in $R_e(I_1)$ as the proportion of transmission due to detected individuals increases (we note that this is different than the number of individuals detected, as symptomatic individuals may contribute more to onward transmission than asymptomatic individuals). Even in the most aggressive test-trace-isolate scenarios (Scenarios 3 + 4), upwards of two-thirds of onward transmission must be attributable to individuals who can be detected in passive surveillance to reduce $R_e(I_1)$ to 1.25 or 1.5. Assuring the State has the capacity and infrastructure to support comprehensive testing is a critical step towards implementing an effective test-trace-isolate strategy. 
+
+**2. Rapid quarantine drives program success.** The most effective strategies here involve the immediate quarantine of household contacts upon identification of a confirmed or presumptive COVID19 case in the household. We find that under reasonable estimates of the proportion of contacts able to be isolated and delays to isolation, traditional test-based strategies (Scenarios 1 + 2) reduce $R_e(I_{1,p})$ to 1.7 - 2.1, from a baseline of 2.5, compared to to $R_e(I_{1,p})$ = 0.8 - 1.2 under scenarios of immediate household quarantine (Scenarios 3 + 4) regardless of contact infection or symptom status. Contact isolation is most effective when implemented within 3 - 4 days of infection, which is typically 1 - 2 days *before* symptom onset, hence the challenge in achieving substantial reductions to $R_e$ with symptom-based or test-based isolation alone.
+
+**3. High levels of adherence are critical.** Increasing the fraction of household contacts successfully quarantined and compliant with quarantine measures, even by 20-30%, is critical for the ongoing effectiveness of test-trace-isolate strategies. Providing economic and social supports for people in isolation and quarantine may be necessary to encourage compliance, particularly among household contacts of confirmed or suspected cases.
+
+ ----------------------
+ 
+### Brief Methods
+
+We consider transmission between three generations: $I_0$, the pool of currently infected individuals who may be detected through symptom-based or other passive surveillance mechanisms; $I_1$, the infected household and non-household contacts of each $I_0$; and $I_2$, the individuals infected by $I_1$. 
+
+We consider that some proportion, $\rho_1$, of individuals in $I_0$ are detected through passive surveillance, and that onward transmission from those individuals is reduced by a factor $(1-\gamma_p)$. Here, $\gamma_p$ is a function of when in the natural history of infection (and infectiousness) and individual is identified, tested, and successfully isolated. The contacts of detected $I_0$ are then able to be enumerated and potentially quarantined. Similarly, we assume that the onward infection from infected contacts of detected seeds ($I_{1,p}$) is reduced by a factor $(1-\gamma_H)$, for household contacts of detected $I_0$, and $(1-\gamma_C)$, for non-household contacts of detected $I_0$, depending on when these individuals are successfully quarantined. The contacts of undetected $I_0$, $I_{1,u}$, are not eligible for contact tracing but can still be detected through passive surveillance with probability $\rho_1$.
+
+We assume that each individual, on average, will infect $R_0$ individuals in the absence of any intervention. Individuals have $N$ contacts, of which $\alpha_H$ are in the household and (1-$\alpha_H$) are outside of the household. Household contacts are $\nu$ times more likely to be infected than non-household contacts. We note that in some contexts, close contacts outside of the household may be better classified as 'household' contacts than non-household contacts, dependent on the risk of transmission. We consider that only some proportion of household ($\rho_H$) and non-household ($\rho_C$) contacts may be successfully located and quarantined.
+
+
+ ---------------------
+ 
 ### Key Questions
 
 1. **How effective is 'traditional' contact tracing?**
 
 Here, we explore a scenario where 10% of infectious individuals are identified through passive surveillance and are contacted to begin isolation and contact tracing. We assume that moderate social distancing is in place, such that each individual would report on average 5 contacts, with average 60% of contacts occurring within the home. On average, cases detected through symptom-based passive surveillance are isolated within 4.6 days of symptom onset. Cases identified through contact tracing on average are isolated within 2.7 days. We estimate that 75% of household contacts of infected cases can be reached and successfully isolated and that 50% of non-household contacts can be reached and successfully traced. We assume that household contacts are 4 times more likely to be infected than non-household contacts.
+
+```{r}
+knitr::include_graphics("../figure/tracing_scenarios/ContactTracingImpact-Scn1.png")
+```
 
 ```{r}
 
@@ -67,24 +100,52 @@ p_scn1 <- list(R0 = 2.5,
                rhoH = 0.75,
                rhoC = 0.5,
                nu = 4,
-               inf_par = c(2.1157790, 0.6898583, 2.3066912),
-               inc_par = c(1.621, 0.418),
-               delay_parP = c(1.22, 0.78),
-               delay_parH = c(0.77, 0.67),
-               delay_parC = c(0.77, 0.67),
-               ind_onset_H = TRUE,
-               ind_onset_C = TRUE)
+               inf_par = inf_dist_short,
+               inc_par = inc_dist,
+               delay_parP = delay_Shzn_symptom,
+               delay_parH = delay_Shzn_contact,
+               delay_parC = delay_Shzn_contact,
+               ind_H = "onset",
+               ind_C = "onset")
+
+p_scn1_long <- p_scn1
+p_scn1_long[['inf_par']] <- inf_dist_long
 
 scn1 <- run_tracing_sim(nsims, I0, p_scn1)
-calcRe_sim(gen1 = scn1$I1_total, gen2 = scn1$I2_total)
-calcRe_sim(gen1 = scn1$I1_passive, gen2 = scn1$I2_passive)
-calcRe_exact(p_scn1)
+scn1_long <- run_tracing_sim(nsims, I0, p_scn1_long)
+
+Re_I1 <- calcRe_sim(gen1 = scn1$I1_total, gen2 = scn1$I2_total)
+Re_I1_passive <- calcRe_sim(gen1 = scn1$I1_passive, gen2 = scn1$I2_passive)
+Re_I0 <- calcRe_sim(gen1=scn1$I0_vec, gen2=scn1$I1_total)
+
+Re_I1_l <- calcRe_sim(gen1 = scn1_long$I1_total, gen2 = scn1_long$I2_total)
+Re_I1_passive_l <- calcRe_sim(gen1 = scn1_long$I1_passive, gen2 = scn1_long$I2_passive)
+Re_I0_l <- calcRe_sim(gen1=scn1_long$I0_vec, gen2=scn1_long$I1_total)
+
+rc <- data.frame(label= c("Re(I0)", "Re(I1)", "Re(I1,p)"),
+                 est = c(Re_I0[2], Re_I1[2], Re_I1_passive[2]),
+                 lo = c(Re_I0[3], Re_I1[3], Re_I1_passive[3]),
+                 hi = c(Re_I0[4], Re_I1[4], Re_I1_passive[4]),
+                 est2 = c(Re_I0_l[2], Re_I1_l[2], Re_I1_passive_l[2]),
+                 lo2 = c(Re_I0_l[3], Re_I1_l[3], Re_I1_passive_l[3]),
+                 hi2 = c(Re_I0_l[4], Re_I1_l[4], Re_I1_passive_l[4]))
+
+autofit(flextable(rc) %>% 
+  colformat_num(j=-1,digits=2) %>%
+  set_header_labels('label'="", 'est'="Median", 'lo'="2.5%", 'hi'="97.5%") %>%
+  flextable::add_header('label' = "", 'est' = "GT = 5d", 'lo' = "", 'hi' = "", "est2" = "GT = 8d", 'lo2' = "", 'hi2' = "") %>%
+  fontsize(size=14))
 
 ```
 
 2. **What happens if we shorten the time it takes to identify cases and trace contacts?**
 
 This scenario is the same as Scenario 1 described above, but we assume that we are able to isolate cases and their contacts on average 2 days earlier (on average, 2.6 days and 0.7 days since symptom onset, respectively). 
+
+
+```{r}
+knitr::include_graphics("../figure/tracing_scenarios/ContactTracingImpact-Scn2.png")
+```
 
 ```{r}
 nsims = 10000
@@ -98,24 +159,51 @@ p_scn2 <- list(R0 = 2.5,
                rhoH = 0.75,
                rhoC = 0.5,
                nu = 4,
-               inf_par = c(2.1157790, 0.6898583, 2.3066912),
-               inc_par = c(1.621, 0.418),
+               inf_par = inf_dist_short,
+               inc_par = inc_dist,
                delay_parP = c(0.65, 0.78),
                delay_parH = c(-0.58, 0.67),
                delay_parC = c(-0.58, 0.67),
-               ind_onset_H = TRUE,
-               ind_onset_C = TRUE)
+               ind_H = "onset",
+               ind_C = "onset")
+
+p_scn2_long <- p_scn2
+p_scn2_long[['inf_par']] <- inf_dist_long
 
 scn2 <- run_tracing_sim(nsims, I0, p_scn2)
-calcRe_sim(gen1 = scn2$I1_total, gen2 = scn2$I2_total)
-calcRe_sim(gen1 = scn2$I1_passive, gen2 = scn2$I2_passive)
-calcRe_exact(p_scn2)
+scn2_long <- run_tracing_sim(nsims, I0, p_scn2_long)
+
+Re_I1 <- calcRe_sim(gen1 = scn2$I1_total, gen2 = scn2$I2_total)
+Re_I1_passive <- calcRe_sim(gen1 = scn2$I1_passive, gen2 = scn2$I2_passive)
+Re_I0 <- calcRe_sim(gen1=scn2$I0_vec, gen2=scn2$I1_total)
+
+Re_I1_l <- calcRe_sim(gen1 = scn2_long$I1_total, gen2 = scn2_long$I2_total)
+Re_I1_passive_l <- calcRe_sim(gen1 = scn2_long$I1_passive, gen2 = scn2_long$I2_passive)
+Re_I0_l <- calcRe_sim(gen1=scn2_long$I0_vec, gen2=scn2_long$I1_total)
+
+rc <- data.frame(label= c("Re(I0)", "Re(I1)", "Re(I1,p)"),
+                 est = c(Re_I0[2], Re_I1[2], Re_I1_passive[2]),
+                 lo = c(Re_I0[3], Re_I1[3], Re_I1_passive[3]),
+                 hi = c(Re_I0[4], Re_I1[4], Re_I1_passive[4]),
+                 est2 = c(Re_I0_l[2], Re_I1_l[2], Re_I1_passive_l[2]),
+                 lo2 = c(Re_I0_l[3], Re_I1_l[3], Re_I1_passive_l[3]),
+                 hi2 = c(Re_I0_l[4], Re_I1_l[4], Re_I1_passive_l[4]))
+
+autofit(flextable(rc) %>% 
+  colformat_num(j=-1,digits=2) %>%
+  set_header_labels('label'="", 'est'="Median", 'lo'="2.5%", 'hi'="97.5%") %>%
+  flextable::add_header('label' = "", 'est' = "GT = 5d", 'lo' = "", 'hi' = "", "est2" = "GT = 8d", 'lo2' = "", 'hi2' = "") %>%
+  fontsize(size=14))
 
 ```
 
 3. **What happens if we quarantine household members at the same time as we isolate index cases after positive test?**
 
 This scenario is the same as Scenario 1 described above, but we now assume that 75% of household members are successfully quarantined on the same day the index case is isolated (4.6 days after index case symptom onset or about 1 day *before* symptom onset of infected household contacts, on average). Non-household contacts are still manually traced following test confirmation, and on average are isolated 2.7 days after their symptom onset.
+
+```{r}
+knitr::include_graphics("../figure/tracing_scenarios/ContactTracingImpact-Scn3.png")
+```
 
 ```{r}
 
@@ -130,24 +218,52 @@ p_scn3 <- list(R0 = 2.5,
                rhoH = 0.75,
                rhoC = 0.5,
                nu = 4,
-               inf_par = c(2.1157790, 0.6898583, 2.3066912),
-               inc_par = c(1.621, 0.418),
-               delay_parP = c(1.22, 0.78),
+               inf_par = inf_dist_short,
+               inc_par = inc_dist,
+               delay_parP = delay_Shzn_symptom,
                delay_parH = c(1.12, 0.67), # indexed from infection
                delay_parC = c(0.77, 0.67), # indexed from onset
-               ind_onset_H = FALSE,
-               ind_onset_C = TRUE)
+               ind_H = "infection",
+               ind_C = "onset")
+
+p_scn3_long <- p_scn3
+p_scn3_long[['inf_par']] <- inf_dist_long
 
 scn3 <- run_tracing_sim(nsims, I0, p_scn3)
-calcRe_sim(gen1 = scn3$I1_total, gen2 = scn3$I2_total)
-calcRe_sim(gen1 = scn3$I1_passive, gen2 = scn3$I2_passive)
-calcRe_exact(p_scn3) 
+scn3_long <- run_tracing_sim(nsims, I0, p_scn3_long)
+
+Re_I1 <- calcRe_sim(gen1 = scn3$I1_total, gen2 = scn3$I2_total)
+Re_I1_passive <- calcRe_sim(gen1 = scn3$I1_passive, gen2 = scn3$I2_passive)
+Re_I0 <- calcRe_sim(gen1=scn3$I0_vec, gen2=scn3$I1_total)
+
+Re_I1_l <- calcRe_sim(gen1 = scn3_long$I1_total, gen2 = scn3_long$I2_total)
+Re_I1_passive_l <- calcRe_sim(gen1 = scn3_long$I1_passive, gen2 = scn3_long$I2_passive)
+Re_I0_l <- calcRe_sim(gen1=scn3_long$I0_vec, gen2=scn3_long$I1_total)
+
+rc <- data.frame(label= c("Re(I0)", "Re(I1)", "Re(I1,p)"),
+                 est = c(Re_I0[2], Re_I1[2], Re_I1_passive[2]),
+                 lo = c(Re_I0[3], Re_I1[3], Re_I1_passive[3]),
+                 hi = c(Re_I0[4], Re_I1[4], Re_I1_passive[4]),
+                 est2 = c(Re_I0_l[2], Re_I1_l[2], Re_I1_passive_l[2]),
+                 lo2 = c(Re_I0_l[3], Re_I1_l[3], Re_I1_passive_l[3]),
+                 hi2 = c(Re_I0_l[4], Re_I1_l[4], Re_I1_passive_l[4]))
+
+autofit(flextable(rc) %>% 
+  colformat_num(j=-1,digits=2) %>%
+  set_header_labels('label'="", 'est'="Median", 'lo'="2.5%", 'hi'="97.5%") %>%
+  flextable::add_header('label' = "", 'est' = "GT = 5d", 'lo' = "", 'hi' = "", "est2" = "GT = 8d", 'lo2' = "", 'hi2' = "") %>%
+  fontsize(size=14))
+
 
 ```
 
 4. **What happens if individuals and their household are asked to isolate when they first contact a healthcare provider, prior to testing or confirmation?**
 
 This scenario is the same as Scenario 3 described above, but we now assume that infectious individuals are isolated, on average, on the day of symptom onset, when they might first contact a healthcare provider. Household contacts are quarantined on the same day which, following the serial interval of SARS-CoV-2, will be on average about 5 days *before* symptom onset of infected household contacts. Non-household contacts are still manually traced following test confirmation, and on average are isolated 2.7 days after their symptom onset.
+
+```{r}
+knitr::include_graphics("../figure/tracing_scenarios/ContactTracingImpact-Scn4.png")
+```
 
 ```{r}
 
@@ -162,24 +278,48 @@ p_scn4 <- list(R0 = 2.5,
                rhoH = 0.75,
                rhoC = 0.5,
                nu = 4,
-               inf_par = c(2.1157790, 0.6898583, 2.3066912),
-               inc_par = c(1.621, 0.418),
+               inf_par = inf_dist_short,
+               inc_par = inc_dist,
                delay_parP = c(-3, 1),
                delay_parH = c(-3, 0.5),
                delay_parC = c(0.77, 0.67),
-               ind_onset_H = FALSE,
-               ind_onset_C = TRUE)
+               ind_H = "infection",
+               ind_C = "onset")
+
+p_scn4_long <- p_scn4
+p_scn4_long[['inf_par']] <- inf_dist_long
 
 scn4 <- run_tracing_sim(nsims, I0, p_scn4)
-calcRe_sim(gen1 = scn4$I1_total, gen2 = scn4$I2_total)
-calcRe_sim(gen1 = scn4$I1_passive, gen2 = scn4$I2_passive)
-calcRe_exact(p_scn4) 
+scn4_long <- run_tracing_sim(nsims, I0, p_scn4_long)
+
+Re_I1 <- calcRe_sim(gen1 = scn4$I1_total, gen2 = scn4$I2_total)
+Re_I1_passive <- calcRe_sim(gen1 = scn4$I1_passive, gen2 = scn4$I2_passive)
+Re_I0 <- calcRe_sim(gen1=scn4$I0_vec, gen2=scn4$I1_total)
+
+Re_I1_l <- calcRe_sim(gen1 = scn4_long$I1_total, gen2 = scn4_long$I2_total)
+Re_I1_passive_l <- calcRe_sim(gen1 = scn4_long$I1_passive, gen2 = scn4_long$I2_passive)
+Re_I0_l <- calcRe_sim(gen1=scn4_long$I0_vec, gen2=scn4_long$I1_total)
+
+rc <- data.frame(label= c("Re(I0)", "Re(I1)", "Re(I1,p)"),
+                 est = c(Re_I0[2], Re_I1[2], Re_I1_passive[2]),
+                 lo = c(Re_I0[3], Re_I1[3], Re_I1_passive[3]),
+                 hi = c(Re_I0[4], Re_I1[4], Re_I1_passive[4]),
+                 est2 = c(Re_I0_l[2], Re_I1_l[2], Re_I1_passive_l[2]),
+                 lo2 = c(Re_I0_l[3], Re_I1_l[3], Re_I1_passive_l[3]),
+                 hi2 = c(Re_I0_l[4], Re_I1_l[4], Re_I1_passive_l[4]))
+
+autofit(flextable(rc) %>% 
+  colformat_num(j=-1,digits=2) %>%
+  set_header_labels('label'="", 'est'="Median", 'lo'="2.5%", 'hi'="97.5%") %>%
+  flextable::add_header('label' = "", 'est' = "GT = 5d", 'lo' = "", 'hi' = "", "est2" = "GT = 8d", 'lo2' = "", 'hi2' = "") %>%
+  fontsize(size=14))
+
 
 ```
 
 5. **How quickly do contacts need to be identified, before there are few additional benefits to quarantine?**
 
-Below, we plot $R_{eff, p}$, the effective reproductive number among contacts of cases detected through passive surveillance, and $R_{eff}$, the effective reproductive number considering all infected individuals, while varying the median time from infection to quarantine for household and non-household contacts of a confirmed case. We assume (as in Scenario 4) that cases are, on average, passively detected on day of symptom onset and that 75% of household contacts and 50% of non-household contacts are successfully quarantined.
+Below, we plot $R_{e}(I1,p)$, the effective reproductive number among contacts of cases detected through passive surveillance, and $R_{e}(I1)$, the effective reproductive number considering all infected individuals, while varying the median time from infection to quarantine for household and non-household contacts of a confirmed case. We assume (as in Scenario 4) that cases are, on average, passively detected on day of symptom onset and that 75% of household contacts and 50% of non-household contacts are successfully quarantined.
 
 ```{r gammaC gammaH, fig.width=8}
 p_base <- list(R0 = 2.5,
@@ -191,15 +331,15 @@ p_base <- list(R0 = 2.5,
                rhoH = 0.75,
                rhoC = 0.5,
                nu = 1,
-               inf_par = c(2.1157790, 0.6898583, 2.3066912),
-               inc_par = c(1.621, 0.418),
+               inf_par = inf_dist_short,
+               inc_par = inc_dist,
                delay_parP = c(-3, 1),
                delay_parH = c(0, 0.5),
                delay_parC = c(0, 0.5),
-               ind_onset_H = FALSE,
-               ind_onset_C = FALSE)
+               ind_H = "infection",
+               ind_C = "infection")
 
-delays <- c(0.05, seq(0.1, 10, 0.1))
+delays <- c(0.05, seq(0.1, 14, 0.1))
 out <- matrix(NA, nrow=length(delays),ncol=5)
 out[,1] <- delays
 for(i in 1:length(delays)){
@@ -211,17 +351,30 @@ colnames(out) <- c("delay", names(calcRe_exact(p_base)))
 par(mfrow=c(1,2))
 plot(out[,'delay'], out[,'Re_I1_passive'],
      xlab="Time from contact infection to quarantine",
-     ylab="R_eff,p",
+     ylab="Re(I1,p)",
      pch=16,
-     ylim=c(0.75, 2.5))
+     ylim=c(0.75, 2.5),
+     main = "GT = 5 days")
 abline(h=1, lty=2)
 
 
-plot(out[,'delay'], out[,'Re_I1'],
+p_base_l <- p_base
+p_base_l[['inf_par']] <- inf_dist_long
+out_l <- matrix(NA, nrow=length(delays),ncol=5)
+out_l[,1] <- delays
+for(i in 1:length(delays)){
+  p_base_l$delay_parH[1] <- p_base_l$delay_parC[1] <- log(delays[i])
+  out_l[i, 2:5] <- calcRe_exact(p_base_l)
+}
+colnames(out_l) <- c("delay", names(calcRe_exact(p_base)))
+
+
+plot(out_l[,'delay'], out_l[,'Re_I1_passive'],
      xlab="Time from contact infection to quarantine",
-     ylab="R_eff",
+     ylab="Re(I1,p)",
      pch=16,
-     ylim=c(0.75, 2.5))
+     ylim=c(0.75, 2.5),
+     main = "GT = 8 days")
 abline(h=1, lty=2)
 
 ```
@@ -235,62 +388,75 @@ abline(h=1, lty=2)
 # Below, we plot $R_{eff, p}$, the effective reproductive number among contacts of cases detected through passive surveillance, and $R_{eff}$, the effective reproductive number considering all infected individuals, while varying the proportion of non-houshold contacts that are isolated in each of the four scenarios described above.
 
 p_list = list(p_scn1, p_scn2, p_scn3, p_scn4)
+p_list_l = list(p_scn1_long, p_scn2_long, p_scn3_long, p_scn4_long)
+
 propC <- seq(0, 1, 0.025)
-outC <- matrix(NA,ncol=6)
+outC <- outC_l <- matrix(NA,ncol=6)
 for(i in 1:length(propC)){
   for(j in 1:length(p_list)){
     p_list[[j]]$rhoC <- propC[i]
+    p_list_l[[j]]$rhoC <- propC[i]
     outC <- rbind(outC,
                   c(propC[i], j, calcRe_exact(p_list[[j]])))
+    outC_l <- rbind(outC_l,
+                    c(propC[i], j, calcRe_exact(p_list_l[[j]])))
   }
 }
 outC <- data.frame(outC[-1,])
-colnames(outC) <- c("propC", "scn", names(calcRe_exact(p_base)))
+outC_l <- data.frame(outC_l[-1,])
+colnames(outC) <- colnames(outC_l) <- c("propC", "scn", names(calcRe_exact(p_base)))
 
 p1 <- ggplot(outC, aes(x=propC, y=Re_I1_passive, group=as.factor(scn), color=as.factor(scn))) +
         geom_line() +
         geom_hline(aes(yintercept=1), lty=2, col='gray') +
         theme_minimal() +
         xlab("proportion non-household contacts isolated") +
-        ylab("R_eff, p") +
-        scale_color_discrete(name="Scenario")
+        ylab("Re(I1,p)") +
+        ggtitle("GT = 5 days") +
+        scale_color_discrete(name="Scenario") + ylim(c(0.68, 2.3))
   
-p2 <- ggplot(outC, aes(x=propC, y=Re_I1, group=as.factor(scn), color=as.factor(scn))) +
+p2 <- ggplot(outC_l, aes(x=propC, y=Re_I1_passive, group=as.factor(scn), color=as.factor(scn))) +
         geom_line() +
         geom_hline(aes(yintercept=1), lty=2, col='gray') +
         theme_minimal() +
         xlab("proportion non-household contacts isolated") +
-        ylab("R_eff") +
-        scale_color_discrete(name="Scenario")
+        ylab("Re(I1,p)") +
+        ggtitle("GT = 8 days") +
+        scale_color_discrete(name="Scenario") + ylim(c(0.68, 2.3))
 
 grid.arrange(p1, p2, nrow=1)
 
 ```
 
-This plot shows $R_{eff}$, the effective reproductive number considering all infected individuals, while varying the proportion of transmission due to cases identified through passive surveillance (including asymptomatic or non-clinically apparent cases). We have also included a horizontal line at $R_eff$ = 1.25, a possible target if we assume a further 20% reduction in transmission through social distancing.
+This plot shows $R_{e}(I1,p)$, the effective reproductive number considering all infected contacts of confirmed cases, while varying the proportion of transmission due to cases identified through passive surveillance (including asymptomatic or non-clinically apparent cases). We have also included a horizontal line at $R_{e}$ = 1.25, a possible target if we assume a further 20% reduction in transmission through social distancing.
 
 ```{r prop1}
 
 p_list = list(p_scn1, p_scn2, p_scn3, p_scn4)
+p_list_l = list(p_scn1_long, p_scn2_long, p_scn3_long, p_scn4_long)
+
 propP <- seq(0, 1, 0.025)
-outP <- matrix(NA,ncol=6)
+outP <- matrix(NA,ncol=7)
 for(i in 1:length(propP)){
   for(j in 1:length(p_list)){
-    p_list[[j]]$rho1 <- propP[i]
+    p_list[[j]]$rho1 <- p_list_l[[j]]$rho1 <- propP[i]
     outP <- rbind(outP,
-                  c(p_list[[j]]$rho1, j, calcRe_exact(p_list[[j]])))
+                  c(5, p_list[[j]]$rho1, j, calcRe_exact(p_list[[j]])),
+                  c(8, p_list_l[[j]]$rho1, j, calcRe_exact(p_list_l[[j]])))
   }
 }
 outP <- data.frame(outP[-1,])
-colnames(outP) <- c("propP", "scn", names(calcRe_exact(p_base)))
+colnames(outP) <- c("GT", "propP", "scn", names(calcRe_exact(p_base)))
+outP$GT <- paste0("GT = ", outP$GT)
 
 ggplot(outP, aes(x=propP, y=Re_I1, group=as.factor(scn), color=as.factor(scn))) +
         geom_line() +
         geom_hline(aes(yintercept=1), lty=2, col='gray') +
         geom_hline(aes(yintercept=1.25), lty=2, col='darkgray') +
         theme_minimal() +
+        facet_wrap(~GT) +
         xlab("prop. transmission from cases detected in passive surveillance") +
-        ylab("R_eff") +
+        ylab("Re(I1)") +
         scale_color_discrete(name="Scenario")
 
 ```
@@ -298,7 +464,7 @@ ggplot(outP, aes(x=propP, y=Re_I1, group=as.factor(scn), color=as.factor(scn))) 
 
 7. **How does the importance of tracing household vs. non-household contacts change with the relative infectiousness of household vs non-houshold contacts?**
 
-There is evidence that attack rates among household contacts are 6 times higher than attack rates among non-household close contacts ([Bi et al.](https://www.thelancet.com/journals/laninf/article/PIIS1473-3099(20)30287-5/fulltext#tbl3)). Below, we plot $R_{eff,p}$ with different values of $\nu$ = 1, 4, 6, 10, the relative reproductive number in household contacts compared to non-household contacts, across varying levels of $\rho_H$, the proportion of household contacts successfully quarantined, and $\rho_C$, the proportion of non-household contacts successfully quarantined. We show results for Scenario 2 (rapid test-based isolation and contact symptom-based quarantine) and Scenario 4 (immediate symptom-based isolation and household quarantine). The red line shows $R_{eff,p}=1$
+There is evidence that attack rates among household contacts are 6 times higher than attack rates among non-household close contacts ([Bi et al.](https://www.thelancet.com/journals/laninf/article/PIIS1473-3099(20)30287-5/fulltext#tbl3)). Below, we plot $R_{e}(I1,p)$ with different values of $\nu$ = 1, 4, 6, 10, the relative reproductive number in household contacts compared to non-household contacts, across varying levels of $\rho_H$, the proportion of household contacts successfully quarantined, and $\rho_C$, the proportion of non-household contacts successfully quarantined. We show results for Scenario 2 (rapid test-based isolation and contact symptom-based quarantine) and Scenario 4 (immediate symptom-based isolation and household quarantine). The red line shows $R_{e}(I1,p)=1$
 
 ```{r nu comparison, fig.width = 8, fig.height = 13}
 
@@ -333,7 +499,7 @@ ggplot(out, aes(x=propC, y=propH, fill=Re_I1_passive)) +
   scale_colour_manual(values = c("white", "red"), guide=F) +
   facet_grid(nu~scn_label) +
   theme_bw()+
-  scale_fill_viridis_c(name="R_eff,p") +
+  scale_fill_viridis_c(name="Re(I1,p)") +
   xlab("Prop. non-household contacts quarantined") +
   ylab("Prop. household contacts quarantined")
 
@@ -341,9 +507,9 @@ ggplot(out, aes(x=propC, y=propH, fill=Re_I1_passive)) +
 
 8. **How does the effective reproductive number change as a function of the delays to quarantine of household and non-household contacts?**
 
-Below, we plot $R_{eff,p}$ across different average delays from exposure to quarantine of household and non-household contacts of confirmed cases underotherwise Traditional contact tracing (Scenario 1). This represents an optimistic scenario where 90% of household contacts and 75% of non-household contacts are traced and isolated. 
+Below, we plot $R_{e}(I1,p)$ across different average delays from exposure to quarantine of household and non-household contacts of confirmed cases underotherwise Traditional contact tracing (Scenario 1). This represents an optimistic scenario where 90% of household contacts and 75% of non-household contacts are traced and isolated. 
 
-```{r scn1 gamma comparison, fig.width = 5, fig.height = 13}
+```{r scn1 gamma comparison, fig.width = 10, fig.height = 13}
 
 p_base <- list(R0 = 2.5,
                theta = 0.1,
@@ -354,42 +520,47 @@ p_base <- list(R0 = 2.5,
                rhoH = 0.9,
                rhoC = 0.75,
                nu = 4,
-               inf_par = c(2.1157790, 0.6898583, 2.3066912),
-               inc_par = c(1.621, 0.418),
+               inf_par = inf_dist_short,
+               inc_par = inc_dist,
                delay_parP = c(1.22, 0.78),
                delay_parH = c(-3, 0.67),
                delay_parC = c(-3, 0.67),
-               ind_onset_H = FALSE,
-               ind_onset_C = FALSE)
+               ind_H = "infection",
+               ind_C = "infection")
+
+p_base_l <- p_base
+p_base_l[['inf_par']] <- inf_dist_long
 
 delaysC <- seq(0.075, 10, 0.075)
 delaysH <- seq(0.075, 10, 0.075)
 relInfs <- c(1, 4, 6, 10)
-out <- matrix(NA,ncol=7)
+out <- matrix(NA,ncol=8)
 for(i in 1:length(delaysC)){
-    p_base$delay_parC[1] <- log(delaysC[i])
+    p_base$delay_parC[1] <- p_base_l$delay_parC[1] <- log(delaysC[i])
   for(j in 1:length(delaysH)){
-    p_base$delay_parH[1] <- log(delaysH[j])
+    p_base$delay_parH[1] <- p_base_l$delay_parH[1]  <- log(delaysH[j])
     for(n in 1:length(relInfs)){
-        p_base$nu <- relInfs[n]
+        p_base$nu <- p_base_l$nu <- relInfs[n]
         out <- rbind(out,
-                    c(delaysC[i], delaysH[j], p_base$nu, calcRe_exact(p_base)))
+                    c(5, delaysC[i], delaysH[j], p_base$nu, calcRe_exact(p_base)),
+                    c(8, delaysC[i], delaysH[j], p_base_l$nu, calcRe_exact(p_base_l)))
     }
   }
 }
 
 
 out <- data.frame(out[-1,])
-colnames(out) <- c("delayC", "delayH", "nu", names(calcRe_exact(p_base)))
+colnames(out) <- c("GT", "delayC", "delayH", "nu", names(calcRe_exact(p_base)))
+out$GT <- paste0("GT = ", out$GT)
 
 ggplot(out, aes(x=delayC, y=delayH, fill=Re_I1_passive)) +
   geom_tile() +
   geom_contour(aes(z=Re_I1_passive, 
                    color = factor(..level.. == 1, levels = c(F, T), labels = c("", "Reff=1")))) + 
   scale_colour_manual(values = c("white", "red"), guide=F) +
-  facet_grid(nu~.) +
+  facet_grid(nu~GT) +
   theme_bw()+
-  scale_fill_viridis_c(name="R_eff,p") +
+  scale_fill_viridis_c(name="Re(I1,p)") +
   xlab("Time from non-HH contact exposure to quarantine") +
   ylab("Time from HH contact exposure to quarantine")
 
@@ -441,12 +612,13 @@ colnames(out) <- c("delayH", "rhoH", "nu", names(calcRe_exact(p_base)))
 
 pH <- ggplot(out, aes(x=delayH, y=rhoH, fill=Re_I1_passive)) +
   geom_tile() +
-  geom_contour(aes(z=Re_I1_passive, 
-                   color = factor(..level.. == 1, levels = c(F, T), labels = c("", "Reff=1")))) + 
-  scale_colour_manual(values = c("white", "red"), guide=F) +
+  geom_contour(aes(z=Re_I1_passive), col="white") +
+  #geom_contour(aes(z=Re_I1_passive, 
+  #                 color = factor(..level.. == 1, levels = c(F, T), labels = c("", "Reff=1")))) + 
+  #scale_colour_manual(values = c("white", "red"), guide=F) +
   facet_grid(nu~.) +
   theme_bw()+
-  scale_fill_viridis_c(name="R_eff,p") +
+  scale_fill_viridis_c(name="Re(I1,p)", limits=c(0, 2.55)) +
   xlab("Time from HH contact exposure to quarantine") +
   ylab("Proportion HH contacts quarantined")
 
@@ -494,12 +666,13 @@ colnames(out) <- c("delayC", "rhoC", "nu", names(calcRe_exact(p_base)))
 
 pC <- ggplot(out, aes(x=delayC, y=rhoC, fill=Re_I1_passive)) +
   geom_tile() +
-  geom_contour(aes(z=Re_I1_passive, 
-                   color = factor(..level.. == 1, levels = c(F, T), labels = c("", "Reff=1")))) + 
-  scale_colour_manual(values = c("white", "red"), guide=F) +
+  geom_contour(aes(z=Re_I1_passive), col="white") +
+  #geom_contour(aes(z=Re_I1_passive, 
+  #                 color = factor(..level.. == 1, levels = c(F, T), labels = c("", "Reff=1")))) + 
+  #scale_colour_manual(values = c("white", "red"), guide=F) +
   facet_grid(nu~.) +
   theme_bw()+
-  scale_fill_viridis_c(name="R_eff,p") +
+  scale_fill_viridis_c(name="Re(I1,p)", limits=c(0, 2.55)) +
   xlab("Time from non-HH contact exposure to quarantine") +
   ylab("Proportion non-HH contacts quarantined")
 
@@ -549,7 +722,7 @@ ggplot(out, aes(x=delayP, y=rhoP, fill=Re_I1)) +
                    color = factor(..level.. == 1, levels = c(F, T), labels = c("", "Reff=1")))) + 
   scale_colour_manual(values = c("white", "red"), guide=F) +
   theme_bw()+
-  scale_fill_viridis_c(name="R_eff") +
+  scale_fill_viridis_c(name="Re(I1)") +
   xlab("Time from symptom onset to index isolation") +
   ylab("Proportion index cases detected")
 
@@ -597,8 +770,31 @@ ggplot(out, aes(x=delayP, y=rhoP, fill=Re_I1)) +
                    color = factor(..level.. == 1, levels = c(F, T), labels = c("", "Reff=1")))) + 
   scale_colour_manual(values = c("white", "red"), guide=F) +
   theme_bw()+
-  scale_fill_viridis_c(name="R_eff") +
+  scale_fill_viridis_c(name="Re(I1)") +
   xlab("Time from symptom onset to index isolation") +
   ylab("Proportion index cases detected")
 
 ```
+
+ ----------------------
+
+### Data Sources
+
+#### Natural history
+
+[Incubation period:](https://annals.org/aim/fullarticle/2762808/incubation-period-coronavirus-disease-2019-covid-19-from-publicly-reported) 5.1d (log-mean 1.621, log-SD 0.418).
+
+[Distribution of Infectiousness](https://www.nature.com/articles/s41591-020-0869-5/figures/1): relative infectiousness from time of symptom onset follows a gamma distribution with shape 2.12, rate 0.69, amd offest 2.31 (generation time ~ 5.5 days). We also consider a delayed distribution of infectiousness, following a gamma distribution with shape 4, rate 0.69, and offset 2.31 (generation time ~ 8 days)
+
+This is consistent with other analyses that find a median serial interval of [4.0 days](https://wwwnc.cdc.gov/eid/article/26/6/20-0357_article), [4.6 days](https://www.sciencedirect.com/science/article/pii/S1201971220301193), [5.1 days](https://www.thelancet.com/journals/laninf/article/PIIS1473-3099(20)30230-9/fulltext),  
+
+#### Contact Data
+
+[The POLYMOD study](https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.0050074) estimates an average of 13.4 contacts per participant per day, including children, though there is variance across countries (e.g., mean 8 in Germany, mean 19.8 in Italy). There was some skew to the data, which also varied by country. Between 20 - 30% of contacts were made in the household.
+
+A [survey in the UK](https://www.medrxiv.org/content/10.1101/2020.03.31.20049023v1?%253fcollection=) found that, from 24 - 26 March 2020, adults reported 3 (IQR 1, 4) physical and non-physical contacts, and that 57.6% of contacts occurred at home.
+
+A [survey in California, New York, Arizona, and Massachusetts, USA](https://www.medrxiv.org/content/10.1101/2020.04.13.20064014v1) found that, from 22 March - 8 April 2020, adults reported an average of 2.7 contacts (median 2) conversational contacts, using the same definition as the POLYMOD study. There were few contacts (mean ~1) outside of the household; 50% of respondents had no contacts outside of the household, and the vast majority that did have contact outside the household reported only 1 or 2 contacts.
+
+Preliminary data from contact tracing efforts in Maryland during the stay-at-home order have indicated that roughly half of adults report no contacts, and those that do report contacts almost always report fewer than 4 contacts. Up to 25% of cases cannot be reached once test results are available.
+

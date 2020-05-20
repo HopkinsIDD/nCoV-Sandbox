@@ -1,5 +1,4 @@
 ## COVID19 Contact Tracing
-## updated 27 April 2020
 
 ## Function to randomly draw a delay from 
 ## symptom onset to isolation, using a dist
@@ -89,11 +88,40 @@ calcRhoC <- function(p, C1_H_C, C1_H_H){
 }
 
 ## Function to perform simulation for given parameter set
+##' @name run_tracing_sim
+##' @description Function to run stochastic simulations of the contact tracing process from I0 - I2
+##'
+##' @param nsims number of simulations to run
+##' @param I0 the number of initially infected individuals to begin each simulation
+##' @param p list of parameters with named parameters as elements
+##'
+##' @return dataframe of final number infected in I0, I1, I2 for each simulation
+##'
+##'
 run_tracing_sim <- function(nsims=1, I0, p){
   
-  # Decide whether delays to isolation among household contacts are indexed from symptom onset or infection
-  if(p[['ind_onset_H']]){delayFuncHH <- pullDelayOnset}else{delayFuncHH <- function(delay_par, inc_par = p[['inc_par']], n){return(pullDelayInfection(delay_par, inc_par, n))}}
-  if(p[['ind_onset_C']]){delayFuncC <- pullDelayOnset}else{delayFuncC <- function(delay_par, inc_par = p[['inc_par']], n){return(pullDelayInfection(delay_par, inc_par, n))}}
+  # Decide whether delays to isolation among household contacts are indexed from symptom onset, infection/exposure, or isolation of the prior generation
+  if(p[['ind_H']]=="onset"){
+    delayFuncHH <- pullDelayOnset
+  }
+  if(p[['ind_H']]=="infection"){
+    delayFuncHH <- function(delay_par, inc_par = p[['inc_par']], n){return(pullDelayInfection(delay_par, inc_par, n))}  
+  }
+  if(p[['ind_H']]=="isolation"){
+    delayFuncHH <- function(delay_par, delay_par_G0 = p[['delay_parP']], inc_par = p[['inc_par']], inf_par = p[['inf_par']], n){
+      return(pullDelayIsolation(delay_par_G0, delay_par_G1=delay_par, inf_par, inc_par, n))}  
+  }
+
+  if(p[['ind_C']]=="onset"){
+    delayFuncC <- pullDelayOnset
+  }
+  if(p[['ind_C']]=="infection"){
+    delayFuncC <- function(delay_par, inc_par = p[['inc_par']], n){return(pullDelayInfection(delay_par, inc_par, n))}  
+  }
+  if(p[['ind_C']]=="isolation"){
+    delayFuncC <- function(delay_par, delay_par_G0 = p[['delay_parP']], inc_par = p[['inc_par']], inf_par = p[['inf_par']], n){
+      return(pullDelayIsolation(delay_par_G0, delay_par_G1=delay_par, inf_par, inc_par, n))}  
+  }
   
   I0_vec <- rep(I0, nsims)
 
@@ -202,6 +230,14 @@ run_tracing_sim <- function(nsims=1, I0, p){
 
 
 ## Function to calculate Re as ratio of simulated gen1 + gen2 cases
+##' @name calcRe_sim
+##' @description wrapper function to calculate Reff + 95% CI between two given generations
+##'
+##' @param gen1 vector of total infectious (infected) individuals in generation 1
+##' @param gen2 vector of total infectious (infected) individuals in generation 2, infected by gen1
+##'
+##' @return named vector of mean, median, 2.5% and 97.5% quantile of Reff
+##'
 calcRe_sim <- function(gen1, gen2){
   xx <- gen2[gen1>0] / gen1[gen1>0]
   return(c(mean = mean(xx),
@@ -210,23 +246,34 @@ calcRe_sim <- function(gen1, gen2){
            hi = quantile(xx, 0.975)))
 }
 
-
-## function to estimate Re directly from parameters
+##' @name calcRe_exact
+##' @description Function to calculate Re for a given strategy using closed form solutions
+##'
+##' @param p list of parameters with named parameters as elements
+##'
+##' @return named vector of Re_I0, Re_I1, Re_I1_passive, Re_I1_undetected
+##'
 calcRe_exact <- function(p){
   
-  # calculate average delays
-  if(p[['ind_onset_H']]){
+  if(p[['ind_H']]=="onset"){
     delayH = exp(p[['delay_parH']][1] + p[['delay_parH']][2]^2/2)
-  }else{
+  }
+  if(p[['ind_H']]=="infection"){
     delayH = exp(p[['delay_parH']][1] + p[['delay_parH']][2]^2/2) - exp(p[['inc_par']][1] + p[['inc_par']][2]^2/2)
-    #delayH = exp(p[['delay_parH']][1]) - exp(p[['inc_par']][1])
+  }
+  if(p[['ind_H']]=="isolation"){
+    stop("not yet supported")
   }
   
-  if(p[['ind_onset_C']]){
+  if(p[['ind_C']]=="onset"){
     delayC = exp(p[['delay_parC']][1] + p[['delay_parC']][2]^2/2)
-  }else{
+  }
+  if(p[['ind_C']]=="infection"){
     delayC = exp(p[['delay_parC']][1] + p[['delay_parC']][2]^2/2) - exp(p[['inc_par']][1] + p[['inc_par']][2]^2/2)
     #delayC = exp(p[['delay_parC']][1]) - exp(p[['inc_par']][1])
+  }
+  if(p[['ind_C']]=="isolation"){
+    stop("not yet supported")
   }
   
   delayP = exp(p[['delay_parP']][1] + p[['delay_parP']][2]^2/2)
@@ -257,17 +304,69 @@ calcRe_exact <- function(p){
 }
 
 
-## TO DO
-# add in thresholds to calculate rho1/rhoH/rhoC
-# check math with nu
-# number tested
 
-## Functions to calculate number of tests - assuming
-## all contacts get tested
-
-
-## Function to calculate number of tests - assuming
-## only non-symptomatic contacts get tested
-# determine asymptomatic + presymptomatic proportion at time t from infection
-
-
+##' @name calcRe_exact_asym
+##' @description Function to calculate Re for a given strategy using closed 
+##' form solutions, accounting for difference in symptomatic and asymptomatic
+##'
+##' @param p_asym list of parameters with named parameters as elements
+##'
+##' @return named vector of Re_I0, Re_I1, Re_I1_passive, Re_I1_undetected
+##'
+calcRe_exact_asym <- function(p_asym){
+  
+  p <- p_asym
+  
+  if(p[['ind_H']]=="onset"){
+    delayH = exp(p[['delay_parH']][1] + p[['delay_parH']][2]^2/2)
+  }
+  if(p[['ind_H']]=="infection"){
+    delayH = exp(p[['delay_parH']][1] + p[['delay_parH']][2]^2/2) - exp(p[['inc_par']][1] + p[['inc_par']][2]^2/2)
+  }
+  if(p[['ind_H']]=="isolation"){
+    stop("not yet supported")
+  }
+  
+  if(p[['ind_C']]=="onset"){
+    delayC = exp(p[['delay_parC']][1] + p[['delay_parC']][2]^2/2)
+  }
+  if(p[['ind_C']]=="infection"){
+    delayC = exp(p[['delay_parC']][1] + p[['delay_parC']][2]^2/2) - exp(p[['inc_par']][1] + p[['inc_par']][2]^2/2)
+    #delayC = exp(p[['delay_parC']][1]) - exp(p[['inc_par']][1])
+  }
+  if(p[['ind_C']]=="isolation"){
+    stop("not yet supported")
+  }
+  
+  delayP_asym = exp(p[['delay_parP_asym']][1] + p[['delay_parP_asym']][2]^2/2)
+  delayP_sym = exp(p[['delay_parP_sym']][1] + p[['delay_parP_sym']][2]^2/2)
+  
+  # calculate average infection proportions
+  gammaPA = calcInfProp(delayP_asym, p[['inf_par']])
+  gammaPS = calcInfProp(delayP_sym, p[['inf_par']])
+  gammaH = calcInfProp(delayH, p[['inf_par']])
+  gammaC = calcInfProp(delayC, p[['inf_par']])
+  
+  R0  <- p[['R0']]
+  rhoPA <- p[['rhoPA']]
+  rhoPS <- p[['rhoPS']]
+  rhoH <- p[['rhoH']] 
+  rhoC <- p[['rhoC']]
+  alphaH <- p[['alphaH']]
+  nu <- p[['nu']]
+  tau <- p[['tau']]
+  
+  d <- alphaH*nu - alphaH + 1
+  x <- tau*(1-rhoPS) + (1-tau)*(1-rhoPA)
+  y <- tau*rhoPS*gammaPS + (1-tau)*rhoPA*gammaPA
+  z <- x + y
+  Re_I0 <- R0*z
+  Re_I1_undetected <- R0*z
+  Re_I1_passive <- (R0/d) * ( (alphaH*nu)*(rhoH*gammaH + (1 - rhoH)*z) + (1-alphaH)*(rhoC*gammaC + (1-rhoC)*Z) )
+  Re_I1 <- R0* (x + (y/(z*d))*((alphaH*nu)*(rhoH*gammaH + (1 - rhoH)*z) + (1-alphaH)*(rhoC*gammaC + (1-rhoC)*Z)))
+  
+  return(c(Re_I0=Re_I0, 
+           Re_I1_passive=Re_I1_passive, 
+           Re_I1_undetected=Re_I1_undetected,
+           Re_I1=Re_I1))
+}
