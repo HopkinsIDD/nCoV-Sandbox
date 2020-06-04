@@ -132,22 +132,37 @@ read_JHUCSSE_cases <- function(last_time, append_wiki) {
 
   for (file in file_list) {
     print(file)
-    tmp <- read_csv(file)%>%
-      rename(Province_State=`Province/State`)%>%
-      rename(Update = `Last Update`) %>%
-      mutate(Update=lubridate::parse_date_time(Update, 
-          c("%m/%d/%Y %I:%M %p", "%m/%d/%Y %H:%M", "%m/%d/%y %I:%M %p","%m/%d/%y %H:%M", "%Y-%m-%d %H:%M:%S")))
+    tmp <- read_csv(file)
+      #rename(Province_State=`Province/State`)%>%
+      #rename(Update = `Last Update`) %>%
+      if("Last_Update"%in%colnames(tmp)) {
+        tmp <- rename(tmp, Update = `Last_Update`)
+      } else {
+        tmp <- rename(tmp, Update = `Last Update`)
+      }
+    
+    
+    tmp <-  mutate(tmp, Update=lubridate::parse_date_time(Update, 
+                                                          c("%m/%d/%Y %I:%M %p", "%m/%d/%Y %H:%M", "%m/%d/%y %I:%M %p","%m/%d/%y %H:%M", "%Y-%m-%d %H:%M:%S")))
     
     if("Country"%in%colnames(tmp)) {
       tmp <- rename(tmp, Country_Region=Country)
-    } else {
+    } 
+    if("Country/Region"%in%colnames(tmp)) {
       tmp <- rename(tmp, Country_Region=`Country/Region`)
+    }
+    
+    if("Province/State"%in%colnames(tmp)) {
+      tmp <- rename(tmp, Province_State=`Province/State`)
     }
     
     if ("Demised"%in% colnames(tmp)) {
       tmp <- rename(tmp, Deaths=Demised)
     }
-
+    if ("FIPS"%in% colnames(tmp)) {
+      tmp <- select(tmp, -c("FIPS"))
+    }
+    
     rc <-bind_rows(rc,tmp)
   }
   
